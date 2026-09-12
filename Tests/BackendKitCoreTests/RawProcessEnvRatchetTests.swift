@@ -24,7 +24,7 @@ struct RawProcessEnvRatchetTests {
     }
 
     @Test("Tests/ has zero raw process-env reads outside the ratchet's own fixtures")
-    func sAreClean() throws {
+    func noRawReadsUnderTests() throws {
         let testsRoot = TestPackagePaths.packageRoot().appendingPathComponent("Tests", isDirectory: true)
         let result = try ConnectionInjectionRatchet.scan(
             sourcesRoot: testsRoot,
