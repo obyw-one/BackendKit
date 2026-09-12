@@ -2,6 +2,7 @@ import BackendKitCore
 import PostgresNIO
 
 // MARK: - PostgresClient.Configuration.make(connection:policy:)
+
 //
 // The ONE way BackendKit configures a `PostgresClient` (spec b7e2d4f6, BR-BKT-03).
 // Extracted from shikki's `PostgresClient.Configuration.shikki(connection:)`
@@ -20,29 +21,28 @@ import PostgresNIO
 //
 // Rebuilding the fields by hand is the exact shape PR #1669 fixed.
 
-extension PostgresClient.Configuration {
-
-  /// The kit's canonical factory. Reads five scalars off the `connection:`
-  /// value, sets `keepAliveBehavior` and `connectionIdleTimeout` from the
-  /// `policy:` value, and never touches the process environment itself.
-  public static func make(
-    connection: any DBConnectionConfiguring,
-    policy: ConnectionPolicy = .shikki
-  ) -> PostgresClient.Configuration {
-    var config = PostgresClient.Configuration(
-      host: connection.host,
-      port: connection.port,
-      username: connection.user,
-      password: connection.password,
-      database: connection.database,
-      tls: .disable
-    )
-    if let keepAlive = policy.keepAlive {
-      config.options.keepAliveBehavior = .init(frequency: keepAlive)
-    } else {
-      config.options.keepAliveBehavior = nil
+public extension PostgresClient.Configuration {
+    /// The kit's canonical factory. Reads five scalars off the `connection:`
+    /// value, sets `keepAliveBehavior` and `connectionIdleTimeout` from the
+    /// `policy:` value, and never touches the process environment itself.
+    static func make(
+        connection: any DBConnectionConfiguring,
+        policy: ConnectionPolicy = .shikki
+    ) -> PostgresClient.Configuration {
+        var config = PostgresClient.Configuration(
+            host: connection.host,
+            port: connection.port,
+            username: connection.user,
+            password: connection.password,
+            database: connection.database,
+            tls: .disable
+        )
+        if let keepAlive = policy.keepAlive {
+            config.options.keepAliveBehavior = .init(frequency: keepAlive)
+        } else {
+            config.options.keepAliveBehavior = nil
+        }
+        config.options.connectionIdleTimeout = policy.idle
+        return config
     }
-    config.options.connectionIdleTimeout = policy.idle
-    return config
-  }
 }

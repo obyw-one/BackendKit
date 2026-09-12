@@ -4,3 +4,9 @@
 .DS_Store
 .shikki/
 .shikki-spec.md
+
+# kagami — same rule as shikki: the auto-discover cache is regenerable, never committed; only scopes.override.toml is config
+.kagami/scopes.toml
+.kagami/scopes.yaml
+.kagami/tmp/
+.kagami/history.db*
