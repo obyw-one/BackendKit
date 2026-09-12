@@ -1,3 +1,4 @@
+import CoreKitTestSupport
 import Foundation
 import PostgresNIO
 import Testing
@@ -82,12 +83,10 @@ struct HostTests {
 
     // MARK: - Helpers
 
-    private static func postgresSourcesRoot(from file: String = #filePath) -> URL {
-        URL(fileURLWithPath: file)
-            .deletingLastPathComponent() // Tests/BackendKitPostgresTests
-            .deletingLastPathComponent() // Tests
-            .deletingLastPathComponent() // package root
-            .appendingPathComponent("Sources/BackendKitPostgres")
+    /// CoreKit's `TestPackagePaths` is the fleet SSoT for "where is my
+    /// package" (BackendKit #2 review) — no hand-counted `#filePath` walk.
+    private static func postgresSourcesRoot() -> URL {
+        TestPackagePaths.sourcesRoot(ofModule: "BackendKitPostgres")
     }
 
     private func findBannedSleepShape(in root: URL) throws -> [String] {

@@ -1,5 +1,34 @@
+import CoreKit
 import Foundation
 import Logging
+
+// MARK: - PostgresEnvKey
+
+/// libpq's connection variables — the ONLY environment names this kit reads
+/// on its own behalf, declared once (CoreKit `EnvironmentKey`, BackendKit #2
+/// review: no raw `environment["…"]` anywhere). Shikki's spec 9d2f6b8e keeps
+/// these as class-A process contract: set by the operator / spawner, read
+/// here, never chosen by the kit.
+public enum PostgresEnvKey: String, EnvironmentKey {
+    case host = "PGHOST"
+    case port = "PGPORT"
+    case user = "PGUSER"
+    case database = "PGDATABASE"
+    case password = "PGPASSWORD"
+}
+
+// MARK: - ConnectionKeySuffix
+
+/// The consumer-prefixed spelling of the same five fields — `SHIKKI_DB_` +
+/// `HOST` … The prefix is the consumer's data; the suffix stays a declared
+/// key so the resolver never assembles a name from a string literal.
+public enum ConnectionKeySuffix: String, EnvironmentKey {
+    case host = "HOST"
+    case port = "PORT"
+    case user = "USER"
+    case database = "NAME"
+    case password = "PASSWORD"
+}
 
 // MARK: - PostgresConnectionConfig
 
@@ -13,6 +42,11 @@ import Logging
 // PASSWORD) so a `SHIKKI_DB_NAME` value flows into `database` — libpq's own
 // key for the same field is `PGDATABASE`. That asymmetry is by design: the
 // prefix is the consumer's naming, libpq is libpq's.
+//
+// The environment arrives as a CoreKit `TypedEnvironment` snapshot: the
+// caller decides where it comes from (`.current()` at a process edge, a
+// settings registry's env-override pairs in shikki after spec 9d2f6b8e W3,
+// a literal in tests). The resolver never touches `ProcessInfo` itself.
 //
 // Malformed `port` values emit ONE warning naming the offending key and fall
 // through to the next choice — the connection still resolves rather than
@@ -33,7 +67,8 @@ public struct PostgresConnectionConfig: DBConnectionConfiguring, Sendable {
     public static let defaultUser = "postgres"
 
     /// Explicit connection — for tests and for callers that received the
-    /// parameters from a verb; production code uses `init(environment:)`.
+    /// parameters from a verb or a settings file; production code that
+    /// honours libpq uses `init(environment:)`.
     public init(
         host: String,
         port: Int,
@@ -48,93 +83,68 @@ public struct PostgresConnectionConfig: DBConnectionConfiguring, Sendable {
         self.password = password
     }
 
-    /// Resolve a connection from an environment dictionary.
+    /// Resolve a connection from a typed environment snapshot.
     ///
     /// - Parameters:
-    ///   - environment: the env to read (default: the process env).
+    ///   - environment: the snapshot to read — `.current()` at a process
+    ///     edge, or whatever the consumer assembled. There is no default:
+    ///     reading the process env is the caller's visible decision.
     ///   - firstChoicePrefix: an optional consumer prefix (e.g. `"SHIKKI_DB_"`)
     ///     whose `<prefix>HOST/PORT/USER/NAME/PASSWORD` keys are tried BEFORE
     ///     libpq's `PGHOST/PGPORT/PGUSER/PGDATABASE/PGPASSWORD`.
     ///   - logger: where malformed-port warnings go; default label
     ///     `"backendkit.postgres.config"`. Injected for hermetic tests.
     public init(
-        environment env: [String: String] = ProcessInfo.processInfo.environment,
+        environment env: TypedEnvironment,
         firstChoicePrefix: String? = nil,
         logger: Logger = Logger(label: "backendkit.postgres.config")
     ) {
-        host =
-            Self.resolveString(
-                env: env,
-                prefix: firstChoicePrefix,
-                prefixSuffix: "HOST",
-                libpqKey: "PGHOST"
-            ) ?? Self.defaultHost
-
-        port = Self.resolvePort(
-            env: env,
-            prefix: firstChoicePrefix,
-            logger: logger
-        )
-
-        user =
-            Self.resolveString(
-                env: env,
-                prefix: firstChoicePrefix,
-                prefixSuffix: "USER",
-                libpqKey: "PGUSER"
-            ) ?? Self.defaultUser
-
-        let resolvedDatabase = Self.resolveString(
-            env: env,
-            prefix: firstChoicePrefix,
-            prefixSuffix: "NAME",
-            libpqKey: "PGDATABASE"
-        )
+        host = Self.resolve(.host, libpq: .host, env: env, prefix: firstChoicePrefix) ?? Self.defaultHost
+        port = Self.resolvePort(env: env, prefix: firstChoicePrefix, logger: logger)
+        user = Self.resolve(.user, libpq: .user, env: env, prefix: firstChoicePrefix) ?? Self.defaultUser
         // libpq's convention: PGDATABASE unset → same as user.
-        database = resolvedDatabase ?? user
+        database = Self.resolve(.database, libpq: .database, env: env, prefix: firstChoicePrefix) ?? user
+        password = Self.resolve(.password, libpq: .password, env: env, prefix: firstChoicePrefix)
+    }
 
-        password = Self.resolveString(
-            env: env,
-            prefix: firstChoicePrefix,
-            prefixSuffix: "PASSWORD",
-            libpqKey: "PGPASSWORD"
-        )
+    /// Convenience for tests and spawners holding a plain dictionary — wraps
+    /// it in a `TypedEnvironment` and resolves exactly as above.
+    public init(
+        environment variables: [String: String],
+        firstChoicePrefix: String? = nil,
+        logger: Logger = Logger(label: "backendkit.postgres.config")
+    ) {
+        self.init(environment: TypedEnvironment(variables), firstChoicePrefix: firstChoicePrefix, logger: logger)
     }
 
     // MARK: - Private helpers
 
-    private static func resolveString(
-        env: [String: String],
-        prefix: String?,
-        prefixSuffix: String,
-        libpqKey: String
+    private static func resolve(
+        _ suffix: ConnectionKeySuffix,
+        libpq key: PostgresEnvKey,
+        env: TypedEnvironment,
+        prefix: String?
     ) -> String? {
-        if let prefix, let value = env["\(prefix)\(prefixSuffix)"], !value.isEmpty {
+        if let prefix, let value = env[suffix, prefix: prefix] {
             return value
         }
-        if let value = env[libpqKey], !value.isEmpty {
-            return value
-        }
-        return nil
+        return env[key]
     }
 
     private static func resolvePort(
-        env: [String: String],
+        env: TypedEnvironment,
         prefix: String?,
         logger: Logger
     ) -> Int {
-        if let prefix {
-            let key = "\(prefix)PORT"
-            if let raw = env[key], !raw.isEmpty {
-                if let parsed = Int(raw) {
-                    return parsed
-                }
-                logger.warning(
-                    "malformed port in \(key)=\(raw) — falling through to libpq PGPORT / default \(defaultPort)"
-                )
+        if let prefix, let raw = env[ConnectionKeySuffix.port, prefix: prefix] {
+            if let parsed = Int(raw) {
+                return parsed
             }
+            logger.warning(
+                "malformed port in \(prefix)\(ConnectionKeySuffix.port.rawValue)=\(raw) — falling through to libpq PGPORT / default \(defaultPort)"
+            )
         }
-        if let raw = env["PGPORT"], !raw.isEmpty {
+        if let raw = env[PostgresEnvKey.port] {
             if let parsed = Int(raw) {
                 return parsed
             }

@@ -14,8 +14,12 @@ import Foundation
 //   2. Raw `PG*` and prefixed connection-key reads outside the resolver only
 //      go DOWN — a consumer feeds a baseline of legacy call sites and the
 //      test fails when a new one appears.
+//   3. NO `ProcessInfo.processInfo.environment` outside the owner files —
+//      the process env is read once, through CoreKit's
+//      `TypedEnvironment.current()`, and handed down (BackendKit #2 review:
+//      "never manage it like this with a raw call of swift api").
 //
-// The helper returns two lists of `file:line` locations; a consumer wires
+// The helper returns three lists of `file:line` locations; a consumer wires
 // them into its own tests. It does not read the process env itself.
 
 public enum ConnectionInjectionRatchet {
@@ -30,11 +34,20 @@ public enum ConnectionInjectionRatchet {
         /// when a prefix was supplied).
         public let rawEnvReads: [String]
 
-        public init(fieldAccess: [String], rawEnvReads: [String]) {
+        /// `Sources/Foo/Bar.swift:42` — a line touching
+        /// `ProcessInfo.processInfo.environment` directly.
+        public let processEnvReads: [String]
+
+        public init(fieldAccess: [String], rawEnvReads: [String], processEnvReads: [String] = []) {
             self.fieldAccess = fieldAccess
             self.rawEnvReads = rawEnvReads
+            self.processEnvReads = processEnvReads
         }
     }
+
+    /// The literal rule 3 bans. Spelled once here so the ratchet's own
+    /// source does not trip a consumer that scans this kit.
+    public static let processEnvLiteral = "ProcessInfo.processInfo." + "environment"
 
     // MARK: - Errors
 
@@ -80,6 +93,7 @@ public enum ConnectionInjectionRatchet {
 
         var fieldAccess: [String] = []
         var rawEnvReads: [String] = []
+        var processEnvReads: [String] = []
 
         for case let rel as String in enumerator where rel.hasSuffix(".swift") {
             let filename = (rel as NSString).lastPathComponent
@@ -101,10 +115,13 @@ public enum ConnectionInjectionRatchet {
                 if envKeyPattern.firstMatch(in: line, range: range) != nil {
                     rawEnvReads.append("\(posixRel):\(index + 1)")
                 }
+                if line.contains(Self.processEnvLiteral) {
+                    processEnvReads.append("\(posixRel):\(index + 1)")
+                }
             }
         }
 
-        return ScanResult(fieldAccess: fieldAccess, rawEnvReads: rawEnvReads)
+        return ScanResult(fieldAccess: fieldAccess, rawEnvReads: rawEnvReads, processEnvReads: processEnvReads)
     }
 
     // MARK: - Regex builders

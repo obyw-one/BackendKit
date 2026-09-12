@@ -1,3 +1,4 @@
+import CoreKitTestSupport
 import Foundation
 import Testing
 @testable import BackendKitCore
@@ -10,15 +11,18 @@ import Testing
 // scan reports BOTH lines with `file:line`. Also confirms the resolver's own
 // file (config type name) is exempted so the ratchet does not flag its own
 // definition.
+//
+// Fixture trees live under the package's own `.tests/` through CoreKit's
+// `TestScratch` (BackendKit #2 review) — never `NSTemporaryDirectory()`.
 
 @Suite("ConnectionInjectionRatchet — the scan helper every consumer runs")
 struct RatchetHelperTests {
     // MARK: - Fixture writer
 
+    private static let scratch = TestScratch.forPackage()
+
     private func makeFixtureTree(files: [String: String]) throws -> URL {
-        let base = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("backendkit-ratchet-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let base = try Self.scratch.makeScratchDir(scope: "ratchet-helper")
         for (relative, content) in files {
             let url = base.appendingPathComponent(relative)
             try FileManager.default.createDirectory(
@@ -48,12 +52,15 @@ struct RatchetHelperTests {
             let y = ProcessInfo.processInfo.environment["PGHOST"]
             """,
         ])
-        defer { try? FileManager.default.removeItem(at: tree) }
+        defer { try? Self.scratch.removeScratchDir(tree) }
 
         let result = try ConnectionInjectionRatchet.scan(sourcesRoot: tree)
 
         #expect(result.fieldAccess == ["Sources/Consumer/Store.swift:2"])
         #expect(result.rawEnvReads == ["Sources/Consumer/Store.swift:3"])
+        // Rule 3: the raw process-env touch is reported on its own list, and
+        // the resolver's own file stays exempt from it too.
+        #expect(result.processEnvReads == ["Sources/Consumer/Store.swift:3"])
     }
 
     @Test("comment lines are not flagged")
@@ -65,7 +72,7 @@ struct RatchetHelperTests {
             let ok = 1
             """,
         ])
-        defer { try? FileManager.default.removeItem(at: tree) }
+        defer { try? Self.scratch.removeScratchDir(tree) }
 
         let result = try ConnectionInjectionRatchet.scan(sourcesRoot: tree)
         #expect(result.fieldAccess.isEmpty)
@@ -82,7 +89,7 @@ struct RatchetHelperTests {
             let admin = env["SHIKKI_DB_ADMIN_TOKEN"]
             """,
         ])
-        defer { try? FileManager.default.removeItem(at: tree) }
+        defer { try? Self.scratch.removeScratchDir(tree) }
 
         let result = try ConnectionInjectionRatchet.scan(
             sourcesRoot: tree,
@@ -107,7 +114,7 @@ struct RatchetHelperTests {
             let leak = env["PGHOST"]
             """,
         ])
-        defer { try? FileManager.default.removeItem(at: tree) }
+        defer { try? Self.scratch.removeScratchDir(tree) }
 
         let result = try ConnectionInjectionRatchet.scan(
             sourcesRoot: tree,

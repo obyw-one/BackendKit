@@ -13,7 +13,8 @@ let package = Package(
         .library(name: "BackendKitPostgres", targets: ["BackendKitPostgres"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/FJ-Studios/CoreKit.git", from: "0.9.0"),
+        // 0.9.1: TypedEnvironment (the one env reader) + CoreKitTestSupport.TestScratch / TestPackagePaths
+        .package(url: "https://github.com/FJ-Studios/CoreKit.git", from: "0.9.1"),
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.22.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
     ],
@@ -32,7 +33,19 @@ let package = Package(
                 .product(name: "PostgresNIO", package: "postgres-nio"),
             ]
         ),
-        .testTarget(name: "BackendKitCoreTests", dependencies: ["BackendKitCore"]),
-        .testTarget(name: "BackendKitPostgresTests", dependencies: ["BackendKitPostgres"]),
+        .testTarget(
+            name: "BackendKitCoreTests",
+            dependencies: [
+                "BackendKitCore",
+                .product(name: "CoreKitTestSupport", package: "CoreKit"),
+            ]
+        ),
+        .testTarget(
+            name: "BackendKitPostgresTests",
+            dependencies: [
+                "BackendKitPostgres",
+                .product(name: "CoreKitTestSupport", package: "CoreKit"),
+            ]
+        ),
     ]
 )

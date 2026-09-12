@@ -1,8 +1,17 @@
+import CoreKit
 import Foundation
 import PostgresNIO
 import Testing
 @testable import BackendKitCore
 @testable import BackendKitPostgres
+
+// MARK: - LiveTestEnvKey
+
+/// The one switch this test target reads, declared as a CoreKit
+/// `EnvironmentKey` (BackendKit #2 review: no raw `environment["…"]`).
+private enum LiveTestEnvKey: String, EnvironmentKey {
+    case liveTests = "BACKENDKIT_LIVE_TESTS"
+}
 
 // MARK: - RepositoryLiveTests
 
@@ -11,7 +20,8 @@ import Testing
 // `PostgresRepository<UUID, Sample>` round-trips a Codable model against a
 // live Postgres. Gated by env var so the package's test target is green
 // without a database — CI without Postgres skips it, a developer with
-// shikki-db running exercises it.
+// shikki-db running exercises it. The process env is snapshotted ONCE through
+// `TypedEnvironment.current()` and handed to the resolver.
 
 @Suite("PostgresRepository — live Codable round-trip (BACKENDKIT_LIVE_TESTS=1)")
 struct RepositoryLiveTests {
@@ -24,8 +34,10 @@ struct RepositoryLiveTests {
 
     // MARK: - Gate
 
+    private static let environment = TypedEnvironment.current()
+
     static var isLive: Bool {
-        ProcessInfo.processInfo.environment["BACKENDKIT_LIVE_TESTS"] == "1"
+        environment.flag(LiveTestEnvKey.liveTests)
     }
 
     // MARK: - T-04
@@ -36,7 +48,7 @@ struct RepositoryLiveTests {
     )
     func liveRoundTrip() async throws {
         let connection = PostgresConnectionConfig(
-            environment: ProcessInfo.processInfo.environment,
+            environment: Self.environment,
             firstChoicePrefix: "SHIKKI_DB_"
         )
         let host = PostgresClientHost(connection: connection, reconnect: false)

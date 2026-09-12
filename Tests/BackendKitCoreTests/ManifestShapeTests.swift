@@ -1,3 +1,4 @@
+import CoreKitTestSupport
 import Foundation
 import Testing
 
@@ -9,21 +10,19 @@ import Testing
 // wants driver-free primitives (an SPM plugin, a lint-only test target)
 // otherwise pays for the transitive weight. The manifest itself is the SSoT:
 // grep-assert its contents rather than build a target graph.
+//
+// Package location goes through CoreKit's `TestPackagePaths` (the fleet SSoT,
+// BackendKit #2 review) — never a hand-counted `#filePath` walk.
 
 @Suite("Package.swift shape — BackendKitCore stays driver-free")
 struct ManifestShapeTests {
     // MARK: - Package.swift locator
 
-    private static func packageRoot(from file: String = #filePath) -> URL {
-        // Tests/BackendKitCoreTests/ManifestShapeTests.swift → package root
-        URL(fileURLWithPath: file)
-            .deletingLastPathComponent() // Tests/BackendKitCoreTests/
-            .deletingLastPathComponent() // Tests/
-            .deletingLastPathComponent() // package root
-    }
-
     private static func readManifest() throws -> String {
-        try String(contentsOf: packageRoot().appendingPathComponent("Package.swift"), encoding: .utf8)
+        try String(
+            contentsOf: TestPackagePaths.packageRoot().appendingPathComponent("Package.swift"),
+            encoding: .utf8
+        )
     }
 
     // MARK: - Assertions
