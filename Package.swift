@@ -13,7 +13,7 @@ let package = Package(
         .library(name: "BackendKitPostgres", targets: ["BackendKitPostgres"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/FJ-Studios/CoreKit.git", from: "0.8.0"),
+        .package(url: "https://github.com/FJ-Studios/CoreKit.git", from: "0.9.0"),
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.22.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
     ],
