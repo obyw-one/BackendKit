@@ -20,55 +20,56 @@ import PostgresNIO
 
 public final class PostgresClientHost: @unchecked Sendable {
 
-    public let client: PostgresClient
-    private let runTask: Task<Void, Never>
-    private let logger: Logger
+  public let client: PostgresClient
+  private let runTask: Task<Void, Never>
+  private let logger: Logger
 
-    /// - Parameters:
-    ///   - connection: the resolved connection (one value, injected once).
-    ///   - policy: pool-timer knobs — defaults to `.shikki` (keep-alive off,
-    ///     one-hour idle) to inherit the fleet's crash-avoidance settings.
-    ///   - logger: the owning caller's logger; reconnect warnings carry its
-    ///     label. Defaults to `"backendkit.postgres.host"`.
-    ///   - reconnect: keep `run()` alive across broker outages (default).
-    ///     `false` = one `run()`; the caller owns retries.
-    public init(
-        connection: any DBConnectionConfiguring,
-        policy: ConnectionPolicy = .shikki,
-        logger: Logger = Logger(label: "backendkit.postgres.host"),
-        reconnect: Bool = true
-    ) {
-        let configuration = PostgresClient.Configuration.make(
-            connection: connection,
-            policy: policy
-        )
-        let client = PostgresClient(configuration: configuration)
-        self.client = client
-        self.logger = logger
-        let log = logger
-        runTask = Task {
-            var attempt = 0
-            while !Task.isCancelled {
-                await client.run()
-                if Task.isCancelled || !reconnect { return }
-                attempt += 1
-                let backoffSeconds = min(60, 1 << min(attempt, 6))
-                if attempt <= 3 {
-                    log.warning("pgClient.run() returned — reconnecting in \(backoffSeconds)s (attempt \(attempt))")
-                } else if attempt % 10 == 0 {
-                    log.warning("pgClient still down after \(attempt) retries — backoff \(backoffSeconds)s")
-                }
-                try? await TaskDeadline.sleep(.seconds(backoffSeconds))
-            }
+  /// - Parameters:
+  ///   - connection: the resolved connection (one value, injected once).
+  ///   - policy: pool-timer knobs — defaults to `.shikki` (keep-alive off,
+  ///     one-hour idle) to inherit the fleet's crash-avoidance settings.
+  ///   - logger: the owning caller's logger; reconnect warnings carry its
+  ///     label. Defaults to `"backendkit.postgres.host"`.
+  ///   - reconnect: keep `run()` alive across broker outages (default).
+  ///     `false` = one `run()`; the caller owns retries.
+  public init(
+    connection: any DBConnectionConfiguring,
+    policy: ConnectionPolicy = .shikki,
+    logger: Logger = Logger(label: "backendkit.postgres.host"),
+    reconnect: Bool = true
+  ) {
+    let configuration = PostgresClient.Configuration.make(
+      connection: connection,
+      policy: policy
+    )
+    let client = PostgresClient(configuration: configuration)
+    self.client = client
+    self.logger = logger
+    let log = logger
+    runTask = Task {
+      var attempt = 0
+      while !Task.isCancelled {
+        await client.run()
+        if Task.isCancelled || !reconnect { return }
+        attempt += 1
+        let backoffSeconds = min(60, 1 << min(attempt, 6))
+        if attempt <= 3 {
+          log.warning(
+            "pgClient.run() returned — reconnecting in \(backoffSeconds)s (attempt \(attempt))")
+        } else if attempt % 10 == 0 {
+          log.warning("pgClient still down after \(attempt) retries — backoff \(backoffSeconds)s")
         }
+        try? await TaskDeadline.sleep(.seconds(backoffSeconds))
+      }
     }
+  }
 
-    /// Cancel the long-running `run()` task. Idempotent.
-    public func close() {
-        runTask.cancel()
-    }
+  /// Cancel the long-running `run()` task. Idempotent.
+  public func close() {
+    runTask.cancel()
+  }
 
-    deinit {
-        runTask.cancel()
-    }
+  deinit {
+    runTask.cancel()
+  }
 }

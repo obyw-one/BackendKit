@@ -22,27 +22,27 @@ import PostgresNIO
 
 extension PostgresClient.Configuration {
 
-    /// The kit's canonical factory. Reads five scalars off the `connection:`
-    /// value, sets `keepAliveBehavior` and `connectionIdleTimeout` from the
-    /// `policy:` value, and never touches the process environment itself.
-    public static func make(
-        connection: any DBConnectionConfiguring,
-        policy: ConnectionPolicy = .shikki
-    ) -> PostgresClient.Configuration {
-        var config = PostgresClient.Configuration(
-            host: connection.host,
-            port: connection.port,
-            username: connection.user,
-            password: connection.password,
-            database: connection.database,
-            tls: .disable
-        )
-        if let keepAlive = policy.keepAlive {
-            config.options.keepAliveBehavior = .init(frequency: keepAlive)
-        } else {
-            config.options.keepAliveBehavior = nil
-        }
-        config.options.connectionIdleTimeout = policy.idle
-        return config
+  /// The kit's canonical factory. Reads five scalars off the `connection:`
+  /// value, sets `keepAliveBehavior` and `connectionIdleTimeout` from the
+  /// `policy:` value, and never touches the process environment itself.
+  public static func make(
+    connection: any DBConnectionConfiguring,
+    policy: ConnectionPolicy = .shikki
+  ) -> PostgresClient.Configuration {
+    var config = PostgresClient.Configuration(
+      host: connection.host,
+      port: connection.port,
+      username: connection.user,
+      password: connection.password,
+      database: connection.database,
+      tls: .disable
+    )
+    if let keepAlive = policy.keepAlive {
+      config.options.keepAliveBehavior = .init(frequency: keepAlive)
+    } else {
+      config.options.keepAliveBehavior = nil
     }
+    config.options.connectionIdleTimeout = policy.idle
+    return config
+  }
 }

@@ -3,12 +3,12 @@
 The engine-agnostic database connection seam of the fleet, one product per engine, on
 [CoreKit](https://github.com/FJ-Studios/CoreKit)'s `RepositoryProtocol` and `Container`.
 
-| product              | contents                                                                                                                         | driver         |
-|----------------------|----------------------------------------------------------------------------------------------------------------------------------|----------------|
-| `BackendKitCore`     | `DBConnectionConfiguring`, `PostgresConnectionConfig(environment:firstChoicePrefix:)`, `ConnectionPolicy`, `ConnectionInjectionRatchet` | none           |
-| `BackendKitPostgres` | `PostgresClientHost`, `PostgresClient.Configuration.make(connection:policy:)`, `PostgresRepository<ID, Model>`                    | postgres-nio   |
-| `BackendKitLibsql`   | reserved — the libSQL/SQLite product, added in W3 by absorbing shikki-io/DataKit                                                  | libsql-swift   |
-| `BackendKitDuckDB`   | reserved — added when a consumer exists                                                                                          | duckdb-swift   |
+| product              | contents                                                                                                                                | driver       |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `BackendKitCore`     | `DBConnectionConfiguring`, `PostgresConnectionConfig(environment:firstChoicePrefix:)`, `ConnectionPolicy`, `ConnectionInjectionRatchet` | none         |
+| `BackendKitPostgres` | `PostgresClientHost`, `PostgresClient.Configuration.make(connection:policy:)`, `PostgresRepository<ID, Model>`                          | postgres-nio |
+| `BackendKitLibsql`   | reserved — the libSQL/SQLite product, added in W3 by absorbing shikki-io/DataKit                                                        | libsql-swift |
+| `BackendKitDuckDB`   | reserved — added when a consumer exists                                                                                                 | duckdb-swift |
 
 Rules of the seam:
 

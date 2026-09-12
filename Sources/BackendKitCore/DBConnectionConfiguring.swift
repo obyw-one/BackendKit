@@ -12,11 +12,11 @@ import Foundation
 // stay in the consumer — the seam is engine-agnostic on purpose.
 
 public protocol DBConnectionConfiguring: Sendable {
-    var host: String { get }
-    var port: Int { get }
-    var user: String { get }
-    var database: String { get }
-    var password: String? { get }
+  var host: String { get }
+  var port: Int { get }
+  var user: String { get }
+  var database: String { get }
+  var password: String? { get }
 }
 
 // MARK: - psql invocation shape
@@ -29,19 +29,19 @@ public protocol DBConnectionConfiguring: Sendable {
 // become call sites of this helper.
 
 extension DBConnectionConfiguring {
-    /// The `-h/-p/-U/-d --no-psqlrc` argument vector every `psql` invocation
-    /// needs. `--no-psqlrc` is deliberate: an operator's `~/.psqlrc` (e.g.
-    /// `\timing`, `\pset border`) contaminates captured output when a caller
-    /// parses `psql -tAc` results. The password is intentionally NOT in the
-    /// vector — pass it via the `PGPASSWORD` environment variable so it never
-    /// appears in a process listing.
-    public var psqlConnectionArguments: [String] {
-        [
-            "-h", host,
-            "-p", String(port),
-            "-U", user,
-            "-d", database,
-            "--no-psqlrc",
-        ]
-    }
+  /// The `-h/-p/-U/-d --no-psqlrc` argument vector every `psql` invocation
+  /// needs. `--no-psqlrc` is deliberate: an operator's `~/.psqlrc` (e.g.
+  /// `\timing`, `\pset border`) contaminates captured output when a caller
+  /// parses `psql -tAc` results. The password is intentionally NOT in the
+  /// vector — pass it via the `PGPASSWORD` environment variable so it never
+  /// appears in a process listing.
+  public var psqlConnectionArguments: [String] {
+    [
+      "-h", host,
+      "-p", String(port),
+      "-U", user,
+      "-d", database,
+      "--no-psqlrc",
+    ]
+  }
 }
