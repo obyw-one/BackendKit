@@ -47,3 +47,13 @@ module_patterns = ["BackendKitSQLiteTests"]
 expected_test_min = 3
 timeout_seconds = 600
 description = "BackendKitSQLite — SQLKit conformance benchmark + SQLRepository round-trips (memory, file) with a hostile-string bind. Offline: no live server, no env flag."
+
+[[scopes]]
+name = "BackendKitDuckDBTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitDuckDBTests"
+module_patterns = ["BackendKitDuckDBTests"]
+expected_test_min = 8
+timeout_seconds = 1800
+description = "BackendKitDuckDB — custom SQLKit driver over duckdb-swift: SQLKit conformance sub-suites (codable, enum, upsert, union, json-paths; testPlanets replayed minus a DuckDB-rejected GROUP BY) + SQLRepository round-trips (memory, file) with a hostile-string bind. Embedded and offline: no live server, no env flag."
