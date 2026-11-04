@@ -4,15 +4,19 @@ import SQLKit
 
 //
 // DuckDB's SQL is Postgres-flavoured, so this starts from `PostgresDialect` and changes
-// only what differs (each point verified against DuckDB 1.1, not assumed):
+// only what differs (each point verified against DuckDB 2.1.0-dev84836, not assumed):
 //   - `$n` placeholders are kept (DuckDB accepts `$1`), `"` identifier quote and `'` string quote too.
 //   - NO `GENERATED ... AS IDENTITY`: DuckDB has no identity columns (auto ids are
 //     `DEFAULT nextval('seq')`). An auto-increment key therefore renders as
 //     `DEFAULT nextval('backendkit_autoincrement') PRIMARY KEY`; the host creates that ONE
 //     shared sequence at open (ids are unique and increasing across tables, not gap-free per table).
-//   - Enums are `.unsupported` (SQLKit then models them as text): DuckDB has no `ALTER TYPE ... ADD VALUE`, and
-//     widening an ENUM column in place (`ALTER COLUMN ... SET DATA TYPE ENUM(...)`) fails with a UINT8 cast error
-//     in 1.1 — so neither SQLKit enum path can complete. `CREATE TYPE ... AS ENUM` still works as raw SQL.
+//   - Enums stay `.unsupported` (SQLKit then models them as text). Re-probed on DuckDB 2.1 dev: `ALTER TYPE ... ADD VALUE`
+//     is still a Parser Error (so `.typeName` fails SQLKit's testEnum), and `.inline` still fails testEnum's in-place
+//     widening with a UINT8 cast error. A hand-written `ALTER COLUMN ... SET DATA TYPE ENUM(...)` on a column now works
+//     on 2.x, and `CREATE TYPE ... AS ENUM` works as raw SQL, but neither SQLKit enum path completes.
+//   - Still DuckDB-by-design on 2.x: `GROUP BY id` over `SELECT *` (no PK functional dependency; Binder Error) and
+//     `ALTER TABLE ... DROP COLUMN` once an index depends on the table (Dependency Error). Closed on 2.x:
+//     `ALTER TABLE ... ADD COLUMN` after a unique index.
 //   - JSON sub-paths use `json_extract(col, '$."a"."b"')` (keys quoted), result is JSON text.
 //   - `blob` stays `BLOB` (no `BYTEA` rename) and `TIMESTAMP` is NOT widened to `TIMESTAMPTZ`.
 //   - No row-lock clauses (`FOR UPDATE` / `FOR SHARE` are not supported by DuckDB).

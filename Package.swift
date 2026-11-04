@@ -25,7 +25,9 @@ let package = Package(
         .package(url: "https://github.com/vapor/sql-kit.git", from: "3.36.0"),
         .package(url: "https://github.com/vapor/postgres-kit.git", from: "2.17.0"),
         .package(url: "https://github.com/vapor/sqlite-kit.git", from: "4.5.2"),
-        .package(url: "https://github.com/duckdb/duckdb-swift.git", from: "1.1.3"),
+        // duckdb-swift has NO stable 2.x tag yet: pinned to a DuckDB-2.x DEV SNAPSHOT (exact; `from:` cannot range over dev tags).
+        // Move to `from: "2.x.y"` once a stable 2.x binding tag ships.
+        .package(url: "https://github.com/duckdb/duckdb-swift.git", exact: "2.1.0-dev84836"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
     ],
