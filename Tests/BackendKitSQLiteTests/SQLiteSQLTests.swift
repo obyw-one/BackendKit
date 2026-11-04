@@ -1,6 +1,7 @@
 import BackendKitSQL
 import BackendKitSQLite
 import Foundation
+import SQLiteKit
 import SQLKit
 import SQLKitBenchmark
 import Testing
@@ -198,6 +199,33 @@ struct SQLiteConsumerDrivenTests {
         let rows = try await host.database.select().column("name").from("sqlite_master")
             .where("type", .equal, "index").where("name", .equal, "idx_notes_title").all()
         #expect(rows.count == 1)
+        try await host.shutdown()
+    }
+
+    @Test("createStrictTable makes the engine enforce column types; a non-STRICT table silently accepts them")
+    func strictTable() async throws {
+        let host = try await SQLiteSQLHost.open(storage: .memory)
+        try await host.createStrictTable("strict_t") { $0.column("n", type: .int, .notNull) }
+        // Idempotent (ifNotExists defaults to true).
+        try await host.createStrictTable("strict_t") { $0.column("n", type: .int, .notNull) }
+        try await host.database.raw("INSERT INTO strict_t (n) VALUES (\(bind: 7))").run()
+        do {
+            try await host.database.raw("INSERT INTO strict_t (n) VALUES (\(bind: "not-an-int"))").run()
+            Issue.record("STRICT table accepted TEXT into an INTEGER column")
+        } catch {
+            #expect(error is SQLiteError) // the engine itself refused the write
+        }
+        let rows = try await host.database.select().column("n").from("strict_t").all()
+        #expect(rows.count == 1)
+
+        // Control: the same insert into a plain table is silently accepted (type affinity only).
+        try await host.database.raw("CREATE TABLE loose_t (n INTEGER NOT NULL)").run()
+        try await host.database.raw("INSERT INTO loose_t (n) VALUES (\(bind: "not-an-int"))").run()
+
+        let ddl = try await host.database.select().column("sql").from("sqlite_master")
+            .where("name", .equal, "strict_t").first()
+        let text = try ddl?.decode(column: "sql", as: String.self) ?? ""
+        #expect(text.hasSuffix("STRICT"))
         try await host.shutdown()
     }
 

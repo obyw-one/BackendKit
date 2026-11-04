@@ -102,6 +102,29 @@ public final class SQLiteSQLHost: @unchecked Sendable {
         try await builder.run()
     }
 
+    /// `CREATE TABLE ... STRICT`: SQLite then ENFORCES each column's declared type instead of its
+    /// loose type affinity (a TEXT value into an INTEGER column is refused, not silently stored).
+    /// SQLKit's create-table builder cannot emit the `STRICT` table option, so the statement is
+    /// built with the typed builder (`configure` adds the columns and constraints) and serialised,
+    /// then ` STRICT` is appended.
+    ///
+    /// This is the ONE sanctioned controlled literal in the host, same spirit as the `journal_mode`
+    /// PRAGMA and the migration-script exception: the DDL comes from SQLKit's typed builder
+    /// (identifiers quoted by the dialect, defaults and checks serialised by SQLKit), `STRICT` is a
+    /// compile-time constant, and no caller or runtime value is concatenated, so no injection
+    /// surface is reintroduced.
+    public func createStrictTable(
+        _ name: String,
+        ifNotExists: Bool = true,
+        _ configure: (SQLCreateTableBuilder) -> SQLCreateTableBuilder
+    ) async throws {
+        var builder = database.create(table: name)
+        if ifNotExists { builder = builder.ifNotExists() }
+        builder = configure(builder)
+        let (sql, _) = database.serialize(builder.query) // DDL only: no binds
+        _ = try await connection.query(sql + " STRICT") // STRICT: compile-time literal
+    }
+
     /// `true` when `error` is SQLite refusing a write for a constraint (UNIQUE, PRIMARY KEY,
     /// NOT NULL, CHECK, FOREIGN KEY): the one engine-specific fact a store needs to turn a
     /// duplicate insert into its own domain error.
