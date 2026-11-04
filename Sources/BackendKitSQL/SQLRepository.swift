@@ -72,9 +72,15 @@ public actor SQLRepository<ID: Codable & Hashable & Sendable, Model: Codable & S
     public func save(_ id: ID, data: Model) async throws {
         // `data` carries the id as one of its own columns; `id` is the key the
         // caller addresses it by. The conflict target is that column.
+        // The update side assigns every column EXCEPT the conflict key: assigning the key
+        // is a no-op by definition, and DuckDB refuses it outright ("Can not assign to
+        // column ... because it has a UNIQUE/PRIMARY KEY constraint").
+        let updated = try SQLQueryEncoder().encode(data).map(\.0).filter { $0 != idColumn }
         try await database.insert(into: table)
             .model(data)
-            .onConflict(with: idColumn) { try $0.set(excludedContentOf: data) }
+            .onConflict(with: idColumn) { builder in
+                updated.reduce(builder) { $0.set(excludedValueOf: $1) }
+            }
             .run()
     }
 

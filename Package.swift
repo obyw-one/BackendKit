@@ -2,7 +2,6 @@
 // BackendKit — the engine-agnostic database connection seam and one product per
 // engine, on CoreKit's repository abstraction (spec b7e2d4f6, 2026-09-12).
 // Dependency direction: BackendKit → CoreKit only — never NetKit, never ShiKit.
-// `BackendKitDuckDB` is reserved (no target until a consumer exists).
 import PackageDescription
 
 let package = Package(
@@ -15,6 +14,8 @@ let package = Package(
         .library(name: "BackendKitSQL", targets: ["BackendKitSQL"]),
         // SQLite engine for SQLRepository (spec b4f8c3a1 W2) — official sqlite-kit, file + in-memory.
         .library(name: "BackendKitSQLite", targets: ["BackendKitSQLite"]),
+        // DuckDB engine for SQLRepository (spec b4f8c3a1 W3) — custom SQLKit driver over duckdb-swift; embedded, single-writer.
+        .library(name: "BackendKitDuckDB", targets: ["BackendKitDuckDB"]),
     ],
     dependencies: [
         // 0.9.1: TypedEnvironment (the one env reader) + CoreKitTestSupport.TestScratch / TestPackagePaths
@@ -24,6 +25,8 @@ let package = Package(
         .package(url: "https://github.com/vapor/sql-kit.git", from: "3.36.0"),
         .package(url: "https://github.com/vapor/postgres-kit.git", from: "2.17.0"),
         .package(url: "https://github.com/vapor/sqlite-kit.git", from: "4.5.2"),
+        .package(url: "https://github.com/duckdb/duckdb-swift.git", from: "1.1.3"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
     ],
     targets: [
@@ -57,6 +60,26 @@ let package = Package(
                 "BackendKitSQL",
                 .product(name: "SQLiteKit", package: "sqlite-kit"),
                 .product(name: "Logging", package: "swift-log"),
+            ]
+        ),
+        .target(
+            name: "BackendKitDuckDB",
+            dependencies: [
+                "BackendKitSQL",
+                .product(name: "DuckDB", package: "duckdb-swift"),
+                .product(name: "SQLKit", package: "sql-kit"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "Logging", package: "swift-log"),
+            ]
+        ),
+        .testTarget(
+            name: "BackendKitDuckDBTests",
+            dependencies: [
+                "BackendKitSQL",
+                "BackendKitDuckDB",
+                .product(name: "SQLKitBenchmark", package: "sql-kit"),
+                .product(name: "CoreKitTestSupport", package: "CoreKit"),
             ]
         ),
         .testTarget(
