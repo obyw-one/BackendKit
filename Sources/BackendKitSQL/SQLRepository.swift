@@ -105,6 +105,15 @@ public actor SQLRepository<ID: Codable & Hashable & Sendable, Model: Codable & S
             .run()
     }
 
+    /// A plain insert: unlike `save` it never updates, so a row whose key (or any other UNIQUE
+    /// column set) already exists is refused by the engine. The driver's error propagates
+    /// untouched; an engine host classifies it (`SQLiteSQLHost.isConstraintViolation`).
+    public func insert(_ data: Model) async throws {
+        try await database.insert(into: table)
+            .model(data)
+            .run()
+    }
+
     public func delete(_ id: ID) async throws {
         let delete = database.delete(from: table)
         for pair in try keyPairs(id) {
