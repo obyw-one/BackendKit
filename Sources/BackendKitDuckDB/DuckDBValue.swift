@@ -55,7 +55,8 @@ enum DuckDBBindEncoder {
     /// RawRepresentable enums, wrappers and Codable structs: encode as a JSON fragment; a scalar
     /// fragment binds as that scalar, an object/array binds as its JSON text.
     private static func viaJSON(_ value: any Encodable) throws -> DuckDBValue {
-        let data = try JSONEncoder().encode(DuckDBBox(value))
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(DuckDBBox(value))
         let object = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         guard let wrapped = (object as? [String: Any])?["v"] else {
             throw DuckDBSQLError.unsupportedBind("\(type(of: value))")
@@ -68,7 +69,10 @@ enum DuckDBBindEncoder {
             return Int64(exactly: n).map { .int($0) } ?? .double(n.doubleValue)
         default:
             let inner = try JSONSerialization.data(withJSONObject: wrapped, options: [.sortedKeys])
-            return .string(String(bytes: inner, encoding: .utf8) ?? "")
+            guard let text = String(bytes: inner, encoding: .utf8) else {
+                throw DuckDBSQLError.unsupportedBind("\(type(of: value)) produced non-UTF8 JSON")
+            }
+            return .string(text)
         }
     }
 }
@@ -91,21 +95,25 @@ private struct DuckDBFragment<T: Decodable>: Decodable {
 
 enum DuckDBValueDecoder {
     static func decode<T: Decodable>(_ type: T.Type, from value: DuckDBValue) throws -> T {
+        let decoder = JSONDecoder()
         if let scalar = try scalar(type, from: value) { return scalar }
+        // Cascading representation probe: scalar fragment -> JSON text/blob -> the final `default:` throws
+        // `typeMismatch`. The `try?` only means "this representation did not fit, try the next".
         // Optionals, RawRepresentable enums and wrappers: through a JSON scalar fragment.
-        if let fragment = fragment(of: value),
-           let decoded = try? JSONDecoder().decode(DuckDBFragment<T>.self, from: fragment).v {
+        if let fragment = try fragment(of: value),
+           let decoded = try? decoder.decode(DuckDBFragment<T>.self, from: fragment).v {
             return decoded
         }
         // A struct/array stored as JSON text (or blob).
         switch value {
-        case .string(let s): return try JSONDecoder().decode(T.self, from: Data(s.utf8))
-        case .blob(let d): return try JSONDecoder().decode(T.self, from: d)
+        case .string(let s): return try decoder.decode(T.self, from: Data(s.utf8))
+        case .blob(let d): return try decoder.decode(T.self, from: d)
         default: throw DuckDBSQLError.typeMismatch("\(value) as \(T.self)")
         }
     }
 
-    private static func fragment(of value: DuckDBValue) -> Data? {
+    /// The JSON scalar-fragment form of a cell, or nil when the cell has none (applicability, not an error).
+    private static func fragment(of value: DuckDBValue) throws -> Data? {
         let json: String
         switch value {
         case .null: json = "null"
@@ -114,11 +122,12 @@ enum DuckDBValueDecoder {
         case .double(let d): json = d.isFinite ? "\(d)" : "null"
         case .decimal(let d): json = "\(d)"
         case .string(let s):
-            guard let data = try? JSONEncoder().encode([s]),
-                  let text = String(bytes: data.dropFirst().dropLast(), encoding: .utf8)
-            else { return nil }
+            let data = try JSONEncoder().encode([s])
+            guard let text = String(bytes: data.dropFirst().dropLast(), encoding: .utf8) else {
+                throw DuckDBSQLError.typeMismatch("\(value) produced non-UTF8 JSON")
+            }
             json = text
-        case .date, .blob: return nil
+        case .date, .blob: return nil  // not applicable: handled by the scalar / JSON-text path, else the default throws
         }
         return Data("{\"v\":\(json)}".utf8)
     }
