@@ -27,3 +27,13 @@ module_patterns = ["BackendKitPostgresTests"]
 expected_test_min = 4
 timeout_seconds = 600
 description = "BackendKitPostgres — the Postgres/NIO driver. Floor is 4, not 5: one test needs a live database and SKIPS without one, so 4 is what passes on a machine with no server (measured 2026-10-29: 4 passed, 0 failed, 1 skipped)."
+
+[[scopes]]
+name = "BackendKitSQLTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitSQLTests"
+module_patterns = ["BackendKitSQLTests"]
+expected_test_min = 2
+timeout_seconds = 600
+description = "BackendKitSQL — SQLRepository binding evidence (offline, 2 tests) plus the live Postgres round-trip and SQLKitBenchmark conformance, which SKIP without BACKENDKIT_LIVE_TESTS=1 (floor 2 is the offline count)."
