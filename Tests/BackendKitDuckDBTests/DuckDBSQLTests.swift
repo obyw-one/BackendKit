@@ -15,10 +15,9 @@ struct Note: Codable, Equatable, Sendable {
 // SQLKit's own driver-conformance suite against the DuckDB driver (spec b4f8c3a1 W3 gate).
 // `SQLBenchmarker.runAllTests()` = testPlanets + testCodable + testEnum + testUpserts +
 // testUnions + testJSONPaths. Each public sub-suite runs on its own so a failure names itself.
-// `testPlanets` is NOT run here: it issues `SELECT * FROM galaxies ... GROUP BY id`, which
-// Postgres/SQLite accept (functional dependency on the primary key) and DuckDB rejects with a
-// Binder Error. That is a DuckDB SQL-semantics difference, not a driver defect, so
-// `DuckDBPlanetsEquivalentTests` replays the same statements minus that one GROUP BY.
+// `testPlanets` is NOT run here; re-verified on DuckDB 2.1.0-dev84836 it still fails on two DuckDB-by-design points:
+// `SELECT * ... GROUP BY id` (no PK functional dependency; Binder Error) and `ALTER TABLE DROP COLUMN` after an index
+// (Dependency Error). `ADD COLUMN` after an index is accepted on 2.x. `DuckDBPlanetsEquivalentTests` replays the rest.
 final class DuckDBBenchmarkTests: XCTestCase {
     private func withHost(_ body: (SQLBenchmarker) async throws -> Void) async throws {
         let host = try await DuckDBSQLHost.open(storage: .memory)
@@ -32,7 +31,7 @@ final class DuckDBBenchmarkTests: XCTestCase {
     }
 
     func testCodableConformance() async throws { try await withHost { try await $0.testCodable() } }
-    func testEnumConformance()  /* enums are .unsupported on DuckDB: SQLKit models them as text */ async throws { try await withHost { try await $0.testEnum() } }
+    func testEnumConformance() async throws { try await withHost { try await $0.testEnum() } }
     func testUpsertConformance() async throws { try await withHost { try await $0.testUpserts() } }
     func testUnionConformance() async throws { try await withHost { try await $0.testUnions() } }
     func testJSONPathsConformance() async throws { try await withHost { try await $0.testJSONPaths() } }
@@ -56,11 +55,12 @@ final class DuckDBPlanetsEquivalentTests: XCTestCase {
             .column("galaxyID", type: .bigint, .references("galaxies", "id"))
             .run()
         try await db.alter(table: "planets").column("name", type: .text, .default(SQLLiteral.string("Unnamed Planet"))).run()
-        // DuckDB refuses ALTER TABLE once an index depends on the table, so the extra-column
-        // alter (which SQLKit's own testPlanets runs AFTER the index) happens first here.
+        // DuckDB refuses DROP COLUMN once an index depends on the table (still true on 2.x), so the drop
+        // happens before the index; ADD COLUMN after the unique index is accepted on 2.x, as in SQLKit's testPlanets.
         try await db.alter(table: "planets").column("extra", type: .int).run()
         try await db.alter(table: "planets").dropColumn("extra").run()
         try await db.create(index: "test_index").on("planets").column("id").unique().run()
+        try await db.alter(table: "planets").column("late", type: .int).run()
 
         try await db.insert(into: "galaxies").columns("id", "name")
             .values(SQLLiteral.default, SQLBind("Milky Way"))
