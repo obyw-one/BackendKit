@@ -37,6 +37,21 @@ public final class SQLiteSQLHost: @unchecked Sendable {
     }
 
     private let connection: SQLiteConnection
+    private let lifecycle = Lifecycle()
+
+    /// Whether `shutdown()` (or the deinit close) has already taken the connection.
+    private final class Lifecycle: @unchecked Sendable {
+        private let lock = NSLock()
+        private var closing = false
+        /// `true` for the first caller only: that caller owns the close.
+        func claimClose() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if closing { return false }
+            closing = true
+            return true
+        }
+    }
 
     /// The injected engine: hand this to `SQLRepository`.
     public let database: any SQLDatabase
@@ -94,6 +109,17 @@ public final class SQLiteSQLHost: @unchecked Sendable {
 
     /// Close the connection. Call once, before the host is dropped.
     public func shutdown() async throws {
+        guard lifecycle.claimClose() else { return }
         try await connection.close()
+    }
+
+    /// A host dropped without `shutdown()` still closes its connection: SQLiteNIO asserts
+    /// (debug builds) that a connection is closed before it deinitialises, and a consumer's
+    /// store is an object whose lifetime ends by being released, not by an awaited call.
+    /// The detached close keeps the connection alive until it completes.
+    deinit {
+        guard lifecycle.claimClose() else { return }
+        let connection = connection
+        Task.detached { try? await connection.close() }
     }
 }

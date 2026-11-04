@@ -173,6 +173,22 @@ struct SQLiteConsumerDrivenTests {
         try await host.shutdown()
     }
 
+    @Test("a host released without shutdown() closes its connection (no SQLiteNIO deinit assertion)")
+    func droppedHostCloses() async throws {
+        let path = tempPath()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        do {
+            let host = try await SQLiteSQLHost.open(storage: .file(path: path))
+            try await createNotes(host)
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        let reopened = try await SQLiteSQLHost.open(storage: .readOnlyFile(path: path))
+        try await reopened.shutdown()
+        let again = try await SQLiteSQLHost.open(storage: .memory)
+        try await again.shutdown()
+        try await again.shutdown()
+    }
+
     @Test("a duplicate primary key is recognised as a constraint violation, other errors are not")
     func constraint() async throws {
         let host = try await SQLiteSQLHost.open(storage: .memory)
