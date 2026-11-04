@@ -139,3 +139,56 @@ struct DuckDBRepositoryTests {
         try await reopened.shutdown()
     }
 }
+
+/// A typed event, ingested as JSONL and analysed in DuckDB (the engine's strength: columnar analytics over files).
+struct Sale: Codable, Equatable, Sendable {
+    let id: Int
+    let category: String
+    let amount: Double
+}
+
+/// The typed shape of the aggregate the analytical query returns.
+struct CategoryTotal: Codable, Equatable, Sendable {
+    let category: String
+    let sales: Int
+    let average: Double
+    let total: Double
+}
+
+@Suite("DuckDB — ingest typed Codable data as JSONL, then analyse it")
+struct DuckDBAnalyticsTests {
+    @Test("JSONL of a Codable list -> read_json_auto -> GROUP BY category -> typed aggregate")
+    func ingestJSONLAndAggregate() async throws {
+        let sales = [
+            Sale(id: 1, category: "books", amount: 10),
+            Sale(id: 2, category: "books", amount: 30),
+            Sale(id: 3, category: "games", amount: 50),
+            Sale(id: 4, category: "books", amount: 20),
+            Sale(id: 5, category: "games", amount: 70),
+        ]
+        // One JSON object per line: the format DuckDB reads natively.
+        let encoder = JSONEncoder()
+        let lines = try sales.map { try #require(String(bytes: try encoder.encode($0), encoding: .utf8)) }
+        let jsonl = lines.joined(separator: "\n")
+        let path = NSTemporaryDirectory() + "backendkit-sales-\(UUID().uuidString).jsonl"
+        try jsonl.write(toFile: path, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        let host = try await DuckDBSQLHost.open(storage: .memory)
+        do {
+            try await host.database.raw("CREATE TABLE sales AS SELECT * FROM read_json_auto(\(bind: path))").run()
+            let totals = try await host.database.raw("""
+                SELECT category, COUNT(*) AS sales, AVG(amount) AS average, SUM(amount) AS total \
+                FROM sales GROUP BY category ORDER BY category
+                """).all(decoding: CategoryTotal.self)
+            #expect(totals == [
+                CategoryTotal(category: "books", sales: 3, average: 20, total: 60),
+                CategoryTotal(category: "games", sales: 2, average: 60, total: 120),
+            ])
+        } catch {
+            try? await host.shutdown()
+            throw error
+        }
+        try await host.shutdown()
+    }
+}

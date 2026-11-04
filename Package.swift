@@ -6,7 +6,8 @@ import PackageDescription
 
 let package = Package(
     name: "BackendKit",
-    platforms: [.macOS(.v14)],
+    // Floors follow CoreKit 0.11.1 (iOS 17 / macOS 14 / tvOS 18); every engine dependency declares lower floors.
+    platforms: [.macOS(.v14), .iOS(.v17), .tvOS(.v18)],
     products: [
         .library(name: "BackendKitCore", targets: ["BackendKitCore"]),
         .library(name: "BackendKitPostgres", targets: ["BackendKitPostgres"]),
@@ -18,8 +19,8 @@ let package = Package(
         .library(name: "BackendKitDuckDB", targets: ["BackendKitDuckDB"]),
     ],
     dependencies: [
-        // 0.9.1: TypedEnvironment (the one env reader) + CoreKitTestSupport.TestScratch / TestPackagePaths
-        .package(url: "https://github.com/FJ-Studios/CoreKit.git", from: "0.9.1"),
+        // TypedEnvironment (the one env reader) + CoreKitTestSupport.TestScratch / TestPackagePaths
+        .package(url: "https://github.com/obyw-one/CoreKit.git", from: "0.11.1"),
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.30.1"),
         // Latest stable by design (BR-SQL-06, operator 2026-11-04) — SQLKit + PostgresKit need tools 6.1.
         .package(url: "https://github.com/vapor/sql-kit.git", from: "3.36.0"),
