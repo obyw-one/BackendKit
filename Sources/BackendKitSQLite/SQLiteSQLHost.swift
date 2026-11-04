@@ -25,6 +25,15 @@ public final class SQLiteSQLHost: @unchecked Sendable {
         case memory
         /// A file database at `path` (created if absent).
         case file(path: String)
+        /// An existing file database opened read-only (SQLite URI `mode=ro`): writes are refused by
+        /// the engine, and a missing file is an error rather than a freshly created empty database.
+        case readOnlyFile(path: String)
+    }
+
+    /// The journal mode a file database is switched to right after opening.
+    public enum JournalMode: String, Sendable {
+        /// Write-ahead log: readers do not block the writer.
+        case wal = "WAL"
     }
 
     private let connection: SQLiteConnection
@@ -40,14 +49,47 @@ public final class SQLiteSQLHost: @unchecked Sendable {
     /// Open the database. Async because the open runs on SQLiteNIO's thread pool.
     public static func open(
         storage: Storage = .memory,
+        journalMode: JournalMode? = nil,
         logger: Logger = Logger(label: "backendkit.sqlite.sql")
     ) async throws -> SQLiteSQLHost {
         let sqliteStorage: SQLiteConnection.Storage = switch storage {
         case .memory: .memory
         case .file(let path): .file(path: path)
+        case .readOnlyFile(let path): .file(path: Self.readOnlyURI(path: path))
         }
         let connection = try await SQLiteConnection.open(storage: sqliteStorage, logger: logger)
+        if let journalMode {
+            // The engine's own pragma, issued here so no consumer writes a SQL string for it.
+            do {
+                _ = try await connection.query("PRAGMA journal_mode=\(journalMode.rawValue)")
+            } catch {
+                try? await connection.close()
+                throw error
+            }
+        }
         return SQLiteSQLHost(connection: connection, logger: logger)
+    }
+
+    /// `true` when `error` is SQLite refusing a write for a constraint (UNIQUE, PRIMARY KEY,
+    /// NOT NULL, CHECK, FOREIGN KEY): the one engine-specific fact a store needs to turn a
+    /// duplicate insert into its own domain error.
+    public static func isConstraintViolation(_ error: any Error) -> Bool {
+        guard let sqlite = error as? SQLiteError else { return false }
+        switch sqlite.reason {
+        case .constraint, .constraintCheckFailed, .constraintForeignKeyFailed, .constraintNotNullFailed,
+             .constraintPrimaryKeyFailed, .constraintUniqueFailed, .constraintUniqueRowIDFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func readOnlyURI(path: String) -> String {
+        var components = URLComponents()
+        components.scheme = "file"
+        components.path = path
+        components.queryItems = [URLQueryItem(name: "mode", value: "ro")]
+        return components.string ?? path
     }
 
     /// Close the connection. Call once, before the host is dropped.

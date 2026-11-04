@@ -6,10 +6,13 @@ import SQLKit
 
 public enum SQLRepositoryError: Error, Sendable, CustomStringConvertible {
     case notFound(idDescription: String)
+    /// A composite key whose encoded columns are not exactly the repository's `keyColumns`.
+    case keyMismatch(expected: [String], actual: [String])
 
     public var description: String {
         switch self {
         case .notFound(let id): "SQLRepositoryError.notFound(id: \(id))"
+        case .keyMismatch(let expected, let actual): "SQLRepositoryError.keyMismatch(expected: \(expected), actual: \(actual))"
         }
     }
 }
@@ -34,7 +37,7 @@ public actor SQLRepository<ID: Codable & Hashable & Sendable, Model: Codable & S
 
     private let database: any SQLDatabase
     private let table: String
-    private let idColumn: String
+    private let keyColumns: [String]
 
     /// - Parameters:
     ///   - database: the injected engine (`SQLDatabase` from a driver host).
@@ -42,20 +45,38 @@ public actor SQLRepository<ID: Codable & Hashable & Sendable, Model: Codable & S
     ///   - idColumn: the primary-key column. Default `"id"`. It must be one of
     ///     the Model's coding keys, so the upsert and the lookup agree.
     public init(database: any SQLDatabase, table: String, idColumn: String = "id") {
+        self.init(database: database, table: table, keyColumns: [idColumn])
+    }
+
+    /// A table keyed by several columns (a composite primary key). `ID` is then a
+    /// Codable value whose coding keys are exactly `keyColumns` (e.g. a
+    /// `(providerId, modelId)` struct); every key value is still a bound parameter.
+    /// With one key column `ID` is that column's value, as in the `idColumn:` form.
+    public init(database: any SQLDatabase, table: String, keyColumns: [String]) {
         self.database = database
         self.table = table
-        self.idColumn = idColumn
+        self.keyColumns = keyColumns
+    }
+
+    /// The bound `column = value` pairs that address `id`.
+    private func keyPairs(_ id: ID) throws -> [(column: String, value: any SQLExpression)] {
+        if keyColumns.count == 1 { return [(keyColumns[0], SQLBind(id))] }
+        let encoded = try SQLQueryEncoder().encode(id)
+        let actual = encoded.map(\.0)
+        guard Set(actual) == Set(keyColumns), actual.count == keyColumns.count else {
+            throw SQLRepositoryError.keyMismatch(expected: keyColumns, actual: actual)
+        }
+        return encoded.map { (column: $0.0, value: $0.1) }
     }
 
     // MARK: RepositoryProtocol
 
     public func get(_ id: ID) async throws -> Model {
-        let rows = try await database.select()
-            .column("*")
-            .from(table)
-            .where(SQLIdentifier(idColumn), .equal, SQLBind(id))
-            .limit(1)
-            .all()
+        let select = database.select().column("*").from(table)
+        for pair in try keyPairs(id) {
+            select.where(SQLIdentifier(pair.column), .equal, pair.value)
+        }
+        let rows = try await select.limit(1).all()
         guard let row = rows.first else {
             throw SQLRepositoryError.notFound(idDescription: String(describing: id))
         }
@@ -72,23 +93,24 @@ public actor SQLRepository<ID: Codable & Hashable & Sendable, Model: Codable & S
     public func save(_ id: ID, data: Model) async throws {
         // `data` carries the id as one of its own columns; `id` is the key the
         // caller addresses it by. The conflict target is that column.
-        // The update side assigns every column EXCEPT the conflict key: assigning the key
+        // The update side assigns every column EXCEPT the conflict key(s): assigning the key
         // is a no-op by definition, and DuckDB refuses it outright ("Can not assign to
         // column ... because it has a UNIQUE/PRIMARY KEY constraint").
-        let updated = try SQLQueryEncoder().encode(data).map(\.0).filter { $0 != idColumn }
+        let updated = try SQLQueryEncoder().encode(data).map(\.0).filter { !keyColumns.contains($0) }
         try await database.insert(into: table)
             .model(data)
-            .onConflict(with: idColumn) { builder in
+            .onConflict(with: keyColumns) { builder in
                 updated.reduce(builder) { $0.set(excludedValueOf: $1) }
             }
             .run()
     }
 
     public func delete(_ id: ID) async throws {
-        let rows = try await database.delete(from: table)
-            .where(SQLIdentifier(idColumn), .equal, SQLBind(id))
-            .returning(SQLIdentifier(idColumn))
-            .all()
+        let delete = database.delete(from: table)
+        for pair in try keyPairs(id) {
+            delete.where(SQLIdentifier(pair.column), .equal, pair.value)
+        }
+        let rows = try await delete.returning(SQLIdentifier(keyColumns[0])).all()
         if rows.isEmpty {
             throw SQLRepositoryError.notFound(idDescription: String(describing: id))
         }
