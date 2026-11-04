@@ -25,3 +25,25 @@
 !.env.dist
 !*.env.example
 !*.env.template
+
+# kagami (shi-qa) — the scope registry is SOURCE, everything else is scratch.
+#
+# An ALLOWLIST, copied from ShellKit, because a denylist cannot keep up:
+# CoreKit lists history.db/-shm/-wal/.write-lock/tmp and still misses
+# `.kagami/runs/`, which is how NetKit came to track 26 kagami artifacts
+# (obyw-one/NetKit#17) — five run status files and twenty sqlite shards whose
+# FILENAMES carry the machine name.
+#
+# This repo had NO kagami rules at all. It was clean only because nothing had
+# gated it yet: two `kagami test` runs here on 2026-10-29 produced 9 untracked
+# files, shards included, all offered for commit. This is prevention, not
+# cleanup.
+#
+# `scopes.toml` is NOT allowlisted — it carries
+# `generated_by = "kagami auto-discover --write-cache"` and regenerates itself.
+# `scopes.override.toml` is the hand-authored source of truth, which is also
+# why it has to exist: ignoring the cache without it would leave a fresh clone
+# with no declared gate at all.
+.kagami/*
+!.kagami/scopes.override.toml
+

@@ -1,0 +1,29 @@
+# kagami scopes for BackendKit — the one way to run this package's tests
+# (never `swift test` from an agent, per [[kagami-only-never-swift-test]]).
+#
+# Hand-authored. Until 2026-10-29 this repo declared nothing: `kagami test
+# --scopes` auto-discovered the two targets and wrote a CACHE
+# (`generated_by = "kagami auto-discover --write-cache"`). A cache is derived,
+# so the gate drifted with discovery and no floor was owned by anyone.
+#
+# Arrays stay on ONE line each: kagami's TOML reader rejects multi-line arrays.
+
+[[scopes]]
+name = "BackendKitCoreTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitCoreTests"
+module_patterns = ["BackendKitCoreTests"]
+expected_test_min = 20
+timeout_seconds = 600
+description = "BackendKitCore — the driver-free core: types, errors and the connection contract."
+
+[[scopes]]
+name = "BackendKitPostgresTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitPostgresTests"
+module_patterns = ["BackendKitPostgresTests"]
+expected_test_min = 4
+timeout_seconds = 600
+description = "BackendKitPostgres — the Postgres/NIO driver. Floor is 4, not 5: one test needs a live database and SKIPS without one, so 4 is what passes on a machine with no server (measured 2026-10-29: 4 passed, 0 failed, 1 skipped)."
