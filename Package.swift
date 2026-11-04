@@ -13,6 +13,8 @@ let package = Package(
         .library(name: "BackendKitPostgres", targets: ["BackendKitPostgres"]),
         // Server-side only (BR-SQL-03): NetKit and the iOS client never import it.
         .library(name: "BackendKitSQL", targets: ["BackendKitSQL"]),
+        // SQLite engine for SQLRepository (spec b4f8c3a1 W2) — official sqlite-kit, file + in-memory.
+        .library(name: "BackendKitSQLite", targets: ["BackendKitSQLite"]),
     ],
     dependencies: [
         // 0.9.1: TypedEnvironment (the one env reader) + CoreKitTestSupport.TestScratch / TestPackagePaths
@@ -21,6 +23,7 @@ let package = Package(
         // Latest stable by design (BR-SQL-06, operator 2026-11-04) — SQLKit + PostgresKit need tools 6.1.
         .package(url: "https://github.com/vapor/sql-kit.git", from: "3.36.0"),
         .package(url: "https://github.com/vapor/postgres-kit.git", from: "2.17.0"),
+        .package(url: "https://github.com/vapor/sqlite-kit.git", from: "4.5.2"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
     ],
     targets: [
@@ -46,6 +49,23 @@ let package = Package(
                 "BackendKitSQL",
                 .product(name: "PostgresNIO", package: "postgres-nio"),
                 .product(name: "PostgresKit", package: "postgres-kit"),
+            ]
+        ),
+        .target(
+            name: "BackendKitSQLite",
+            dependencies: [
+                "BackendKitSQL",
+                .product(name: "SQLiteKit", package: "sqlite-kit"),
+                .product(name: "Logging", package: "swift-log"),
+            ]
+        ),
+        .testTarget(
+            name: "BackendKitSQLiteTests",
+            dependencies: [
+                "BackendKitSQL",
+                "BackendKitSQLite",
+                .product(name: "SQLKitBenchmark", package: "sql-kit"),
+                .product(name: "CoreKitTestSupport", package: "CoreKit"),
             ]
         ),
         .testTarget(

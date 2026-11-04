@@ -1,5 +1,5 @@
 {
-  "originHash" : "39f35872d25bae727108489e533cded5c5909417bf874db6b8c7769e626d7471",
+  "originHash" : "cf1537f1291fdc24fc8a381e8fa74b7668c1575f77a67c2a65d2ed34d788646d",
   "pins" : [
     {
       "identity" : "async-kit",
@@ -44,6 +44,24 @@
       "state" : {
         "revision" : "3779cedb44b1f374f2cca261c6d28f206024a582",
         "version" : "3.36.0"
+      }
+    },
+    {
+      "identity" : "sqlite-kit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/vapor/sqlite-kit.git",
+      "state" : {
+        "revision" : "f35a863ecc2da5d563b836a9a696b148b0f4169f",
+        "version" : "4.5.2"
+      }
+    },
+    {
+      "identity" : "sqlite-nio",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/vapor/sqlite-nio.git",
+      "state" : {
+        "revision" : "52fd69b9b2ee614d90ba277616fb6cc98ea5a64c",
+        "version" : "1.13.2"
       }
     },
     {
