@@ -202,6 +202,17 @@ struct SQLiteConsumerDrivenTests {
             #expect(SQLiteSQLHost.isConstraintViolation(error))
         }
         #expect(!SQLiteSQLHost.isConstraintViolation(SQLRepositoryError.notFound(idDescription: "x")))
+
+        // The repository's plain insert refuses an existing key; save() still upserts it.
+        let repo = SQLRepository<UUID, Note>(database: host.database, table: "notes")
+        do {
+            try await repo.insert(note)
+            Issue.record("expected insert to refuse a duplicate")
+        } catch {
+            #expect(SQLiteSQLHost.isConstraintViolation(error))
+        }
+        try await repo.save(note.id, data: Note(id: note.id, title: "again", count: 2))
+        #expect(try await repo.get(note.id).title == "again")
         try await host.shutdown()
     }
 }
