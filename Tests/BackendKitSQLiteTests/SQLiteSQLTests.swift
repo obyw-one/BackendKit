@@ -256,3 +256,45 @@ struct SQLiteConsumerDrivenTests {
         try await host.shutdown()
     }
 }
+
+struct Memo: Codable, Equatable, Sendable {
+    let id: String
+    let title: String
+    let body: String?
+    let count: Int
+}
+
+@Suite("SQLRepository — save is PUT, update is PATCH (BR-SQL-09)")
+struct SQLitePutPatchTests {
+    private func makeSUT() async throws -> (SQLiteSQLHost, SQLRepository<String, Memo>) {
+        let host = try await SQLiteSQLHost.open(storage: .memory)
+        try await host.database.raw("CREATE TABLE memos (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT, count INTEGER NOT NULL)").run()
+        return (host, SQLRepository<String, Memo>(database: host.database, table: "memos"))
+    }
+
+    @Test("T-09: save with a nil field CLEARS the column on an existing row (PUT, not patch)")
+    func saveClearsNil() async throws {
+        let (host, repo) = try await makeSUT()
+        try await repo.save("a", data: Memo(id: "a", title: "t", body: "keep me?", count: 1))
+        try await repo.save("a", data: Memo(id: "a", title: "t2", body: nil, count: 2))
+        let row = try await host.database.select().column("*").from("memos").where("id", .equal, "a").first()
+        #expect(try row?.decodeNil(column: "body") == true)
+        #expect(try await repo.get("a") == Memo(id: "a", title: "t2", body: nil, count: 2))
+        try await host.shutdown()
+    }
+
+    @Test("T-10: update(set:) changes only the named column; a nil writes NULL; unnamed untouched")
+    func updatePatches() async throws {
+        let (host, repo) = try await makeSUT()
+        try await repo.save("a", data: Memo(id: "a", title: "t", body: "b", count: 1))
+        try await repo.save("z", data: Memo(id: "z", title: "other", body: "ob", count: 9))
+        try await repo.update("a", set: ["title": "new"])
+        #expect(try await repo.get("a") == Memo(id: "a", title: "new", body: "b", count: 1))
+        try await repo.update("a", set: ["body": nil])
+        #expect(try await repo.get("a") == Memo(id: "a", title: "new", body: nil, count: 1))
+        #expect(try await repo.get("z") == Memo(id: "z", title: "other", body: "ob", count: 9))
+        await #expect(throws: SQLRepositoryError.self) { try await repo.update("missing", set: ["title": "x"]) }
+        await #expect(throws: SQLRepositoryError.self) { try await repo.update("a", set: [:]) }
+        try await host.shutdown()
+    }
+}

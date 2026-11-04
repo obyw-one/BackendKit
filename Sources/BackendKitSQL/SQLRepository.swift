@@ -9,9 +9,13 @@ public enum SQLRepositoryError: Error, Sendable, CustomStringConvertible {
     /// A composite key whose encoded columns are not exactly the repository's `keyColumns`.
     case keyMismatch(expected: [String], actual: [String])
 
+    /// `update(_:set:)` was given no column to change.
+    case emptyPatch
+
     public var description: String {
         switch self {
         case .notFound(let id): "SQLRepositoryError.notFound(id: \(id))"
+        case .emptyPatch: "SQLRepositoryError.emptyPatch"
         case .keyMismatch(let expected, let actual): "SQLRepositoryError.keyMismatch(expected: \(expected), actual: \(actual))"
         }
     }
@@ -90,19 +94,44 @@ public actor SQLRepository<ID: Codable & Hashable & Sendable, Model: Codable & S
             .all(decoding: Model.self)
     }
 
+    /// PUT: a full-row REPLACE (BR-SQL-09). Every column is written, and a `nil` optional is an
+    /// explicit SQL NULL (`nilEncodingStrategy: .asNil`; SQLKit's default OMITS nils, which made
+    /// `save` silently patch). Saving a model whose field is nil therefore CLEARS that column on an
+    /// existing row. For a partial change use `update(_:set:)`.
     public func save(_ id: ID, data: Model) async throws {
         // `data` carries the id as one of its own columns; `id` is the key the
         // caller addresses it by. The conflict target is that column.
         // The update side assigns every column EXCEPT the conflict key(s): assigning the key
         // is a no-op by definition, and DuckDB refuses it outright ("Can not assign to
         // column ... because it has a UNIQUE/PRIMARY KEY constraint").
-        let updated = try SQLQueryEncoder().encode(data).map(\.0).filter { !keyColumns.contains($0) }
+        let updated = try SQLQueryEncoder(nilEncodingStrategy: .asNil).encode(data).map(\.0).filter { !keyColumns.contains($0) }
         try await database.insert(into: table)
-            .model(data)
+            .model(data, nilEncodingStrategy: .asNil)
             .onConflict(with: keyColumns) { builder in
                 updated.reduce(builder) { $0.set(excludedValueOf: $1) }
             }
             .run()
+    }
+
+    /// PATCH: only the named columns change (BR-SQL-09). A column mapped to `nil` is written as an
+    /// explicit SQL NULL; a column not named is untouched. Scoped by every key column of `id`.
+    /// Throws `notFound` when no row matches, and `emptyPatch` when `set` names no column.
+    public func update(_ id: ID, set columns: [String: (any Encodable & Sendable)?]) async throws {
+        guard !columns.isEmpty else { throw SQLRepositoryError.emptyPatch }
+        let update = database.update(table)
+        for name in columns.keys.sorted() {
+            switch columns[name] {
+            case .some(.some(let value)): update.set(name, to: value)
+            default: update.set(name, to: SQLLiteral.null)
+            }
+        }
+        for pair in try keyPairs(id) {
+            update.where(SQLIdentifier(pair.column), .equal, pair.value)
+        }
+        let rows = try await update.returning(SQLIdentifier(keyColumns[0])).all()
+        if rows.isEmpty {
+            throw SQLRepositoryError.notFound(idDescription: String(describing: id))
+        }
     }
 
     /// A plain insert: unlike `save` it never updates, so a row whose key (or any other UNIQUE
