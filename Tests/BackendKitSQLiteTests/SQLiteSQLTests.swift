@@ -189,6 +189,18 @@ struct SQLiteConsumerDrivenTests {
         try await again.shutdown()
     }
 
+    @Test("createIndexIfNotExists creates the index once and is a no-op the second time")
+    func indexIfNotExists() async throws {
+        let host = try await SQLiteSQLHost.open(storage: .memory)
+        try await createNotes(host)
+        try await host.createIndexIfNotExists("idx_notes_title", on: "notes", columns: ["title"])
+        try await host.createIndexIfNotExists("idx_notes_title", on: "notes", columns: ["title"])
+        let rows = try await host.database.select().column("name").from("sqlite_master")
+            .where("type", .equal, "index").where("name", .equal, "idx_notes_title").all()
+        #expect(rows.count == 1)
+        try await host.shutdown()
+    }
+
     @Test("a duplicate primary key is recognised as a constraint violation, other errors are not")
     func constraint() async throws {
         let host = try await SQLiteSQLHost.open(storage: .memory)

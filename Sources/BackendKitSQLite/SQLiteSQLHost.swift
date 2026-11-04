@@ -85,6 +85,23 @@ public final class SQLiteSQLHost: @unchecked Sendable {
         return SQLiteSQLHost(connection: connection, logger: logger)
     }
 
+    /// `CREATE INDEX` that is a no-op when the index already exists. SQLKit's index builder has no
+    /// `IF NOT EXISTS` (its dialects disagree on it), so the check reads SQLite's own catalogue.
+    public func createIndexIfNotExists(_ name: String, on table: String, columns: [String]) async throws {
+        let existing = try await database.select()
+            .column("name")
+            .from("sqlite_master")
+            .where("type", .equal, "index")
+            .where("name", .equal, name)
+            .first()
+        guard existing == nil else { return }
+        let builder = database.create(index: name).on(table)
+        for column in columns {
+            _ = builder.column(column)
+        }
+        try await builder.run()
+    }
+
     /// `true` when `error` is SQLite refusing a write for a constraint (UNIQUE, PRIMARY KEY,
     /// NOT NULL, CHECK, FOREIGN KEY): the one engine-specific fact a store needs to turn a
     /// duplicate insert into its own domain error.
