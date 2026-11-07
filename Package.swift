@@ -6,6 +6,8 @@ import PackageDescription
 
 let package = Package(
     name: "BackendKit",
+    // `platforms:` declares APPLE minimums only; it does not exclude Linux/Windows — those are governed by dependency support
+    // (CoreKit is NOT Linux-clean today: unguarded SwiftUI/Combine/Network/os imports; the SQL engines' own deps are).
     // Floors follow CoreKit 0.11.1 (iOS 17 / macOS 14 / tvOS 18); every engine dependency declares lower floors.
     platforms: [.macOS(.v14), .iOS(.v17), .tvOS(.v18)],
     products: [
