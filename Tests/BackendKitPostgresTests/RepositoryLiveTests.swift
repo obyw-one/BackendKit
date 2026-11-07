@@ -1,17 +1,10 @@
+import BackendKitTestSupport
 import CoreKit
 import Foundation
 import PostgresNIO
 import Testing
 @testable import BackendKitCore
 @testable import BackendKitPostgres
-
-// MARK: - LiveTestEnvKey
-
-/// The one switch this test target reads, declared as a CoreKit
-/// `EnvironmentKey` (BackendKit #2 review: no raw `environment["…"]`).
-private enum LiveTestEnvKey: String, EnvironmentKey {
-    case liveTests = "BACKENDKIT_LIVE_TESTS"
-}
 
 // MARK: - RepositoryLiveTests
 
@@ -37,7 +30,7 @@ struct RepositoryLiveTests {
     private static let environment = TypedEnvironment.current()
 
     static var isLive: Bool {
-        environment.flag(LiveTestEnvKey.liveTests)
+        environment.flag(LiveEnvKey.liveTests)
     }
 
     // MARK: - T-04

@@ -1,3 +1,4 @@
+import BackendKitTestSupport
 import Foundation
 import Testing
 @testable import BackendKitSQLite

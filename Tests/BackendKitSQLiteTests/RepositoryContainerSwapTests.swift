@@ -1,5 +1,6 @@
 import BackendKitSQL
 import BackendKitSQLite
+import BackendKitTestSupport
 import CoreKit
 import Foundation
 import Testing

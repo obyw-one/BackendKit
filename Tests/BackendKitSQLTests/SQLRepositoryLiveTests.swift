@@ -1,4 +1,5 @@
 import BackendKitPostgres
+import BackendKitTestSupport
 import Foundation
 import SQLKit
 import Testing

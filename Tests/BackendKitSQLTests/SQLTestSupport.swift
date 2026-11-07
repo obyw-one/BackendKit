@@ -1,14 +1,8 @@
 import BackendKitCore
 import BackendKitPostgres
+import BackendKitTestSupport
 import CoreKit
 import Foundation
-
-// MARK: - LiveEnvKey
-
-/// The one switch this target reads (declared key, never a raw `environment["…"]`).
-enum LiveEnvKey: String, EnvironmentKey {
-    case liveTests = "BACKENDKIT_LIVE_TESTS"
-}
 
 // MARK: - LiveDatabase
 
