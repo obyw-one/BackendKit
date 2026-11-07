@@ -6,9 +6,10 @@ The engine-agnostic database connection seam of the fleet, one product per engin
 | product              | contents                                                                                                                                | driver       |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
 | `BackendKitCore`     | `DBConnectionConfiguring`, `PostgresConnectionConfig(environment:firstChoicePrefix:)`, `ConnectionPolicy`, `ConnectionInjectionRatchet` | none         |
-| `BackendKitPostgres` | `PostgresClientHost`, `PostgresClient.Configuration.make(connection:policy:)`, `PostgresRepository<ID, Model>`                          | postgres-nio |
-| `BackendKitLibsql`   | reserved — the libSQL/SQLite product, added in W3 by absorbing shikki-io/DataKit                                                        | libsql-swift |
-| `BackendKitDuckDB`   | reserved — added when a consumer exists                                                                                                 | duckdb-swift |
+| `BackendKitPostgres` | `PostgresClientHost`, `PostgresClient.Configuration.make(connection:policy:)`, `PostgresRepository<ID, Model>`, `PostgresSQLHost`       | postgres-nio |
+| `BackendKitSQL`      | `SQLRepository<ID, Model>` — one typed, parameter-binding repository over any SQLKit `SQLDatabase` (server-side only)                   | SQLKit       |
+| `BackendKitSQLite`   | `SQLiteSQLHost` — file / in-memory SQLite engine for `SQLRepository`                                                                    | sqlite-kit   |
+| `BackendKitDuckDB`   | `DuckDBSQLHost` — embedded, single-writer DuckDB engine for `SQLRepository`                                                             | duckdb-swift |
 
 Rules of the seam:
 
@@ -19,30 +20,52 @@ Rules of the seam:
 
 ## Adding a consumer
 
+The process environment is read in ONE place in the fleet, `TypedEnvironment.current()`; the resolver takes the snapshot, it never reads the process itself.
+
 ```swift
 import BackendKitCore
 import BackendKitPostgres
+import BackendKitSQL
 import CoreKit
 
+struct Note: Codable, Sendable { let id: UUID; let title: String }
+
 let connection = PostgresConnectionConfig(
-    environment: ProcessInfo.processInfo.environment,
+    environment: TypedEnvironment.current(),
     firstChoicePrefix: "SIGMA_DB_"  // optional consumer prefix
 )
-let host = PostgresClientHost(connection: connection, policy: .shikki)
-let container = Container(name: "sigma")
-container.register(PostgresRepository<UUID, MyModel>.self) { _ in
-    PostgresRepository(client: host.client, table: "my_records")
+let host = PostgresSQLHost(connection: connection)
+
+// Register the PROTOCOL, never the engine: the environment picks the implementation
+// (SQL in production, CoreKit's `InMemoryRepository` in mock) and the consumer never changes.
+struct NotesAssembly: DIAssembly {
+    let database: any SQLDatabase
+    func assemble(container: Container, environment: DIEnvironment) {
+        switch environment {
+        case .production:
+            container.register((any RepositoryProtocol<UUID, Note>).self) { [database] _ in
+                SQLRepository<UUID, Note>(database: database, table: "notes")
+            }
+        case .mock:
+            container.register((any RepositoryProtocol<UUID, Note>).self) { _ in InMemoryRepository<UUID, Note>() }
+        }
+    }
 }
+DI.configure(for: .production, assemblies: [NotesAssembly(database: host.database)])
+
+// Anywhere downstream: `@Resolve var notes: any RepositoryProtocol<UUID, Note>`
 ```
 
-That is the full contract — one config, one host, one repository. Nothing else imports postgres-nio.
+That is the full contract — one config, one host, one repository. Nothing else imports postgres-nio. A JSONB-per-row store is `PostgresRepository(client: PostgresClientHost(connection:).client, table:)`, registered the same way.
 
 ## Testing
 
-- `swift test` — green without a database (T-01…T-03, T-05).
-- `BACKENDKIT_LIVE_TESTS=1 swift test` — exercises `PostgresRepositoryLiveTests` against a running Postgres (T-04).
-- The Postgres tests read their connection through `PostgresConnectionConfig(environment:firstChoicePrefix: "SHIKKI_DB_")` so `shikki-db` at `127.0.0.1:5433` works out of the box.
+Tests run through kagami (`kagami test --scope <scope> --strict`, scopes from `kagami test --scopes`), never a bare `swift test`.
+
+- Every scope is green without a database. `BackendKitSQLTests` and `BackendKitPostgresTests` each carry live-Postgres tests that SKIP unless `BACKENDKIT_LIVE_TESTS=1` is set.
+- `BACKENDKIT_LIVE_TESTS=1` exercises them against a running Postgres. The Postgres tests read their connection through `PostgresConnectionConfig(environment:firstChoicePrefix: "SHIKKI_DB_")` so `shikki-db` at `127.0.0.1:5433` works out of the box.
+- Tests locate the package with CoreKit's `TestPackagePaths` and write only under `TestScratch` (the package's own git-ignored `.tests/`); `FleetRatchetsTests` holds both rules, plus the `TaskDeadline` rule, across `Sources/` and `Tests/`.
 
 ## Spec & owner
 
-Spec: `backendkit-connection-seam-and-postgres-product-2026-09-12` (b7e2d4f6). Owner: obyw-one. Depends on CoreKit ≥ 0.9.0 (`TaskDeadline`, `RepositoryProtocol`, `Container`).
+Spec: `backendkit-connection-seam-and-postgres-product-2026-09-12` (b7e2d4f6). Owner: obyw-one. Depends on CoreKit ≥ 0.12.0 (`TypedEnvironment`, `TaskDeadline`, `RepositoryProtocol`, `Container`, and `CoreKitTestSupport` in the tests).

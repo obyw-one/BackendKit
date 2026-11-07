@@ -1,5 +1,6 @@
 import BackendKitDuckDB
 import BackendKitSQL
+import CoreKitTestSupport
 import Foundation
 import SQLKit
 import SQLKitBenchmark
@@ -93,6 +94,8 @@ final class DuckDBPlanetsEquivalentTests: XCTestCase {
 
 @Suite("SQLRepository — DuckDB round-trip (no server needed)")
 struct DuckDBRepositoryTests {
+    private static let scratch = TestScratch.forPackage()
+
     static let hostile = "x'); DROP TABLE notes; --"
 
     private func roundTrip(_ host: DuckDBSQLHost) async throws {
@@ -124,8 +127,10 @@ struct DuckDBRepositoryTests {
 
     @Test("file-backed: round-trip, and data persists across a reopen")
     func file() async throws {
-        let path = NSTemporaryDirectory() + "backendkit-duckdb-\(UUID().uuidString).db"
-        defer { try? FileManager.default.removeItem(atPath: path) }
+        // Under the package's own `.tests/` (CoreKit `TestScratch`), never `NSTemporaryDirectory()`.
+        let directory = try Self.scratch.makeScratchDir(scope: "duckdb")
+        defer { try? Self.scratch.removeScratchDir(directory) }
+        let path = directory.appendingPathComponent("backendkit-duckdb.db").path
         let host = try await DuckDBSQLHost.open(storage: .file(path: path))
         do { try await roundTrip(host) } catch { try? await host.shutdown(); throw error }
         let repo = SQLRepository<UUID, Note>(database: host.database, table: "notes")
@@ -157,6 +162,8 @@ struct CategoryTotal: Codable, Equatable, Sendable {
 
 @Suite("DuckDB — ingest typed Codable data as JSONL, then analyse it")
 struct DuckDBAnalyticsTests {
+    private static let scratch = TestScratch.forPackage()
+
     @Test("JSONL of a Codable list -> read_json_auto -> GROUP BY category -> typed aggregate")
     func ingestJSONLAndAggregate() async throws {
         let sales = [
@@ -170,9 +177,10 @@ struct DuckDBAnalyticsTests {
         let encoder = JSONEncoder()
         let lines = try sales.map { try #require(String(bytes: try encoder.encode($0), encoding: .utf8)) }
         let jsonl = lines.joined(separator: "\n")
-        let path = NSTemporaryDirectory() + "backendkit-sales-\(UUID().uuidString).jsonl"
+        let directory = try Self.scratch.makeScratchDir(scope: "duckdb")
+        defer { try? Self.scratch.removeScratchDir(directory) }
+        let path = directory.appendingPathComponent("backendkit-sales.jsonl").path
         try jsonl.write(toFile: path, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(atPath: path) }
 
         let host = try await DuckDBSQLHost.open(storage: .memory)
         do {

@@ -126,8 +126,8 @@ struct RatchetHelperTests {
 
     @Test("missing sources directory throws a RatchetError")
     func missingSourcesRootThrows() {
-        let ghost = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("does-not-exist-\(UUID().uuidString)")
+        // A scratch root that is never created: a path that exists nowhere, inside the package's own `.tests/`.
+        let ghost = Self.scratch.scratchRoot(scope: "does-not-exist")
         #expect(throws: ConnectionInjectionRatchet.RatchetError.self) {
             try ConnectionInjectionRatchet.scan(sourcesRoot: ghost)
         }
