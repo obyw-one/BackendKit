@@ -1,5 +1,7 @@
+import BackendKitTestSupport
 import Foundation
 import Logging
+import NIOConcurrencyHelpers
 import NIOCore
 import NIOPosix
 import SQLKit
@@ -10,11 +12,12 @@ import Testing
 
 /// A driver-less `SQLDatabase` that serializes every query the way a real driver
 /// would and records the SQL text and the bound values — the evidence for BR-SQL-01.
-final class RecordingDatabase: SQLDatabase, @unchecked Sendable {
+final class RecordingDatabase: SQLDatabase {
     struct Recorded { let sql: String; let binds: [any Encodable & Sendable] }
-    private let lock = NSLock()
-    private var storage: [Recorded] = []
-    var recorded: [Recorded] { lock.withLock { storage } }
+    // `SQLDatabase.execute` is synchronous, so an actor cannot sit behind it: a `NIOLockedValueBox` (`Sendable`
+    // without an `@unchecked`) guards the recording.
+    private let storage = NIOLockedValueBox<[Recorded]>([])
+    var recorded: [Recorded] { storage.withLockedValue { $0 } }
 
     let logger = Logger(label: "backendkit.sql.recording")
     var eventLoop: any EventLoop { MultiThreadedEventLoopGroup.singleton.next() }
@@ -24,7 +27,7 @@ final class RecordingDatabase: SQLDatabase, @unchecked Sendable {
     func execute(sql query: any SQLExpression, _ onRow: @escaping @Sendable (any SQLRow) -> Void) -> EventLoopFuture<Void> {
         var serializer = SQLSerializer(database: self)
         query.serialize(to: &serializer)
-        lock.withLock { storage.append(Recorded(sql: serializer.sql, binds: serializer.binds)) }
+        storage.withLockedValue { $0.append(Recorded(sql: serializer.sql, binds: serializer.binds)) }
         return eventLoop.makeSucceededFuture(())
     }
 }
@@ -37,14 +40,6 @@ struct TestDialect: SQLDialect {
     func literalBoolean(_ value: Bool) -> any SQLExpression { SQLRaw(value ? "true" : "false") }
     var supportsAutoIncrement: Bool { true }
     var autoIncrementClause: any SQLExpression { SQLRaw("AUTOINCREMENT") }
-}
-
-// MARK: - Fixture
-
-struct Note: Codable, Equatable, Sendable {
-    let id: UUID
-    let title: String
-    let count: Int
 }
 
 // MARK: - Tests
