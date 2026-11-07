@@ -1,5 +1,5 @@
 {
-  "originHash" : "2e58838015fc0ec1a374d524b6794d1d8b75f2ff03133f38d799854d7690fd17",
+  "originHash" : "c64cc02f78955236e6300f40896b3fa00f2556f053cbe64c0ff03c0f3057dcb5",
   "pins" : [
     {
       "identity" : "async-kit",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/obyw-one/CoreKit.git",
       "state" : {
-        "revision" : "87827a055b6e7805eecc66d3fb8cc45dc234dc55",
-        "version" : "0.11.1"
+        "revision" : "c1a73e7055a88144ec423c4fd60d3b47c88e84f0",
+        "version" : "0.12.0"
       }
     },
     {
