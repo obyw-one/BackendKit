@@ -83,7 +83,12 @@ public enum ConnectionInjectionRatchet {
         firstChoicePrefixes: [String] = [],
         ownerFiles: Set<String> = []
     ) throws -> ScanResult {
-        guard let enumerator = FileManager.default.enumerator(atPath: sourcesRoot.path) else {
+        // Darwin's `enumerator(atPath:)` is nil for a missing directory; Linux's is not, and would scan
+        // nothing and report a clean tree. Check the directory itself so a wrong root fails loudly everywhere.
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: sourcesRoot.path, isDirectory: &isDirectory), isDirectory.boolValue,
+              let enumerator = FileManager.default.enumerator(atPath: sourcesRoot.path)
+        else {
             throw RatchetError("no Sources dir at \(sourcesRoot.path)")
         }
 

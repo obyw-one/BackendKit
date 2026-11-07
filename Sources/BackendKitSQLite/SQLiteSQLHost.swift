@@ -37,6 +37,7 @@ public final class SQLiteSQLHost: @unchecked Sendable {
     }
 
     private let connection: SQLiteConnection
+    private let logger: Logger
     private let lifecycle = Lifecycle()
 
     /// Whether `shutdown()` (or the deinit close) has already taken the connection.
@@ -58,6 +59,7 @@ public final class SQLiteSQLHost: @unchecked Sendable {
 
     private init(connection: SQLiteConnection, logger: Logger) {
         self.connection = connection
+        self.logger = logger
         database = connection.sql()
     }
 
@@ -78,7 +80,8 @@ public final class SQLiteSQLHost: @unchecked Sendable {
             do {
                 _ = try await connection.query("PRAGMA journal_mode=\(journalMode.rawValue)")
             } catch {
-                try? await connection.close()
+                // The PRAGMA's error is the one the caller needs; a failed close on top of it is logged, not dropped.
+                await Self.logFailure(of: { try await connection.close() }, logger: logger, context: "after a failed journal_mode PRAGMA")
                 throw error
             }
         }
@@ -160,6 +163,23 @@ public final class SQLiteSQLHost: @unchecked Sendable {
     deinit {
         guard lifecycle.claimClose() else { return }
         let connection = connection
-        Task.detached { try? await connection.close() }
+        let logger = logger
+        Task.detached {
+            await Self.logFailure(of: { try await connection.close() }, logger: logger, context: "while releasing an unclosed host")
+        }
+    }
+
+    /// Run a close on a path that cannot throw (a failed open, a deinit): a failure is logged with its
+    /// error through the host's logger, never dropped.
+    static func logFailure(
+        of close: () async throws -> Void,
+        logger: Logger,
+        context: String
+    ) async {
+        do {
+            try await close()
+        } catch {
+            logger.error("SQLite connection close failed \(context)", metadata: ["error": "\(error)"])
+        }
     }
 }

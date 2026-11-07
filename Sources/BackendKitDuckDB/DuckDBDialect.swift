@@ -1,3 +1,4 @@
+#if BACKENDKIT_DUCKDB
 import SQLKit
 
 // MARK: - DuckDBDialect
@@ -62,3 +63,4 @@ public struct DuckDBDialect: SQLDialect {
         return SQLFunction("json_extract", args: column, SQLLiteral.string(jsonPath))
     }
 }
+#endif

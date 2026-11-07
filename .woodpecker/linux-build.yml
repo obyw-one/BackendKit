@@ -1,0 +1,40 @@
+# .woodpecker/linux-build.yml — prove BackendKit builds AND passes its tests on Linux (spec b4f8c3a1)
+#
+# The backend half of the fleet runs on Linux, so every product that is offered there must build with ZERO Apple
+# framework and pass its suite. Which products those are is declared once in Package.swift ("Platform split"):
+# Core, SQL, SQLite and Postgres build here; the DuckDB product is gated by `duckDBPlatforms`. A product that is
+# not offered on Linux compiles to an empty module, so `swift build` still covers the whole package. Runs on
+# ci.obyw.one (Woodpecker), on the vendor-neutral official swift Linux image — the fleet convention
+# (CoreKit's .woodpecker/linux-build.yml is the model for this file).
+
+when:
+  event: [pull_request, push, manual]  # manual = the "Exécuter un pipeline" button (operator-triggered run)
+  branch: [develop, "epic/*", "feat/*", "fix/*", "agent/*", "story/*"]
+
+# Pin to the nuc-dev Docker agent. Without a platform label the Mac agent (local
+# backend, runs on the host, ignores image:) is also eligible for this workflow.
+labels:
+  platform: linux/amd64
+
+variables:
+  - &swift_image "swift:6.3-jammy"  # Docker Hub official Linux stable; BackendKit is swift-tools 6.1, within range
+
+steps:
+  linux-build:
+    image: *swift_image
+    commands:
+      - swift --version
+      - swift build --build-tests   # every target AND every test target, so the test code is compiled on Linux too
+
+  # Compiling is not working: the whole suite runs here too (Swift Testing and XCTest).
+  #
+  # Direct SwiftPM on purpose, the one exception to "kagami only": kagami has no Linux path yet
+  # (macOS-only package, private dependencies; spec 4965545a). Replace this step with kagami once it does.
+  #
+  # The live-Postgres tests (`BACKENDKIT_LIVE_TESTS=1`) SKIP without a server, exactly as on macOS: this pipeline
+  # starts no database, so what it proves for Postgres is the build, the offline binding/host/reconnect tests
+  # and the manifest shape, not a round-trip against a server.
+  linux-test:
+    image: *swift_image
+    commands:
+      - swift test --skip-build

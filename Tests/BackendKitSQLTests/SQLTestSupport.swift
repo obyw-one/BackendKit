@@ -1,3 +1,4 @@
+#if BACKENDKIT_POSTGRES
 import BackendKitCore
 import BackendKitPostgres
 import CoreKit
@@ -23,3 +24,4 @@ enum LiveDatabase {
         PostgresConnectionConfig(environment: environment)
     }
 }
+#endif

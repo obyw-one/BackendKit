@@ -1,3 +1,4 @@
+#if BACKENDKIT_POSTGRES
 import CoreKit
 import Foundation
 import PostgresNIO
@@ -90,3 +91,4 @@ struct RepositoryLiveTests {
         _ = try await client.query(PostgresQuery(unsafeSQL: sql, binds: PostgresBindings()))
     }
 }
+#endif

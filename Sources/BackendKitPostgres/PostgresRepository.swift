@@ -1,3 +1,4 @@
+#if BACKENDKIT_POSTGRES
 import BackendKitCore
 import CoreKit
 import Foundation
@@ -12,9 +13,9 @@ public enum PostgresRepositoryError: Error, Sendable, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case let .notFound(id):
+        case .notFound(let id):
             "PostgresRepositoryError.notFound(id: \(id))"
-        case let .invalidPayload(message):
+        case .invalidPayload(let message):
             "PostgresRepositoryError.invalidPayload(\(message))"
         }
     }
@@ -38,8 +39,7 @@ public enum PostgresRepositoryError: Error, Sendable, CustomStringConvertible {
 public actor PostgresRepository<ID, Model>: RepositoryProtocol
     where
     ID: PostgresNonThrowingEncodable & PostgresDecodable & Hashable & Sendable,
-    Model: Codable & Sendable
-{
+    Model: Codable & Sendable {
     // MARK: - Dependencies
 
     private let client: PostgresClient
@@ -170,3 +170,4 @@ public actor PostgresRepository<ID, Model>: RepositoryProtocol
         return try decoder.decode(Model.self, from: data)
     }
 }
+#endif

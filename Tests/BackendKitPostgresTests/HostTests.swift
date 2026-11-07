@@ -1,3 +1,4 @@
+#if BACKENDKIT_POSTGRES
 import CoreKitTestSupport
 import Foundation
 import PostgresNIO
@@ -80,3 +81,4 @@ struct HostTests {
         #expect(banned.isEmpty, "clock-based sleep in BackendKitPostgres: \(banned)")
     }
 }
+#endif
