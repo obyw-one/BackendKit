@@ -24,23 +24,29 @@ variables:
   - &swift_image "swift:6.3-jammy"  # Docker Hub official Linux stable; BackendKit is swift-tools 6.1, within range
   # Where the pinned libduckdb is installed (inside the workspace, which every step shares): pkg-config finds it at
   # build time, the dynamic loader at run time.
-  - &libduckdb_env
-    LIBDUCKDB_PREFIX: ${CI_WORKSPACE}/.libduckdb
-    PKG_CONFIG_PATH: ${CI_WORKSPACE}/.libduckdb/lib/pkgconfig
-    LD_LIBRARY_PATH: ${CI_WORKSPACE}/.libduckdb/lib
 
 steps:
   libduckdb:
     image: *swift_image
-    environment: *libduckdb_env
+    # Paths are resolved when the step runs. A `${CI_WORKSPACE}` in an `environment:` block is
+    # substituted when the pipeline is parsed, where it is empty, which put the library under
+    # `/.libduckdb` at the container root and lost it before the build step. `$$` escapes Woodpecker's
+    # own substitution so the shell expands it.
     commands:
+      - export LIBDUCKDB_PREFIX="$$CI_WORKSPACE/.libduckdb" PKG_CONFIG_PATH="$$CI_WORKSPACE/.libduckdb/lib/pkgconfig" LD_LIBRARY_PATH="$$CI_WORKSPACE/.libduckdb/lib"
       - uname -m
+      - test -n "$$CI_WORKSPACE" || { echo "CI_WORKSPACE is empty"; exit 1; }
       - sh Scripts/install-libduckdb.sh
+      - test -f "$$LIBDUCKDB_PREFIX/include/duckdb.h"
 
   linux-build:
     image: *swift_image
-    environment: *libduckdb_env
+    # Paths are resolved when the step runs. A `${CI_WORKSPACE}` in an `environment:` block is
+    # substituted when the pipeline is parsed, where it is empty, which put the library under
+    # `/.libduckdb` at the container root and lost it before the build step. `$$` escapes Woodpecker's
+    # own substitution so the shell expands it.
     commands:
+      - export LIBDUCKDB_PREFIX="$$CI_WORKSPACE/.libduckdb" PKG_CONFIG_PATH="$$CI_WORKSPACE/.libduckdb/lib/pkgconfig" LD_LIBRARY_PATH="$$CI_WORKSPACE/.libduckdb/lib"
       - swift --version
       - swift build --build-tests   # every target AND every test target, so the test code is compiled on Linux too
 
@@ -55,6 +61,10 @@ steps:
   # and the manifest shape, not a round-trip against a server.
   linux-test:
     image: *swift_image
-    environment: *libduckdb_env
+    # Paths are resolved when the step runs. A `${CI_WORKSPACE}` in an `environment:` block is
+    # substituted when the pipeline is parsed, where it is empty, which put the library under
+    # `/.libduckdb` at the container root and lost it before the build step. `$$` escapes Woodpecker's
+    # own substitution so the shell expands it.
     commands:
+      - export LIBDUCKDB_PREFIX="$$CI_WORKSPACE/.libduckdb" PKG_CONFIG_PATH="$$CI_WORKSPACE/.libduckdb/lib/pkgconfig" LD_LIBRARY_PATH="$$CI_WORKSPACE/.libduckdb/lib"
       - swift test --skip-build
