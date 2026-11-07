@@ -1,5 +1,6 @@
 import BackendKitSQL
 import BackendKitSQLite
+import BackendKitTestSupport
 import CoreKit
 import CoreKitTestSupport
 import Foundation
@@ -8,12 +9,6 @@ import SQLKit
 import SQLKitBenchmark
 import Testing
 import XCTest
-
-struct Note: Codable, Equatable, Sendable {
-    let id: UUID
-    let title: String
-    let count: Int
-}
 
 // SQLKit's own driver-conformance suite against the SQLite driver (spec b4f8c3a1 W2 gate).
 final class SQLiteBenchmarkTests: XCTestCase {

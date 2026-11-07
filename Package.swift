@@ -100,6 +100,15 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),
+        // Shared by the test targets only (no product): the one LogCapture, the Note fixture, the live-test env key.
+        .target(
+            name: "BackendKitTestSupport",
+            dependencies: [
+                .product(name: "CoreKit", package: "CoreKit"),
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+            ]
+        ),
         .target(
             name: "BackendKitDuckDB",
             dependencies: [
@@ -125,6 +134,7 @@ let package = Package(
         .testTarget(
             name: "BackendKitSQLiteTests",
             dependencies: [
+                "BackendKitTestSupport",
                 "BackendKitSQL",
                 "BackendKitSQLite",
                 .product(name: "SQLKitBenchmark", package: "sql-kit"),
@@ -144,6 +154,8 @@ let package = Package(
         .testTarget(
             name: "BackendKitSQLTests",
             dependencies: [
+                "BackendKitTestSupport",
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
                 "BackendKitSQL",
                 "BackendKitPostgres",
                 .product(name: "SQLKitBenchmark", package: "sql-kit"),
@@ -154,6 +166,7 @@ let package = Package(
         .testTarget(
             name: "BackendKitPostgresTests",
             dependencies: [
+                "BackendKitTestSupport",
                 "BackendKitPostgres",
                 .product(name: "CoreKitTestSupport", package: "CoreKit"),
                 .product(name: "Logging", package: "swift-log"),

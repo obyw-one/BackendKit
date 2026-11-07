@@ -1,34 +1,34 @@
-import Foundation
 import Logging
+import NIOConcurrencyHelpers
 
 // MARK: - LogCapture
 
 /// An in-memory `Logger` sink, so a test can assert that a failure was LOGGED with its error
-/// rather than dropped. (BackendKitSQLiteTests has its own copy; a third would belong in a shared target.)
-final class LogCapture: @unchecked Sendable {
-    struct Entry: Sendable {
-        let level: Logger.Level
-        let message: String
-        let metadata: Logger.Metadata
+/// rather than dropped.
+///
+/// swift-log's `LogHandler.log(event:)` is synchronous, so an actor cannot sit behind it; the entries live in a
+/// `NIOLockedValueBox`, which is `Sendable` without an `@unchecked`, and so is this class.
+public final class LogCapture: Sendable {
+    public struct Entry: Sendable {
+        public let level: Logger.Level
+        public let message: String
+        public let metadata: Logger.Metadata
     }
 
-    private let lock = NSLock()
-    private var stored: [Entry] = []
+    private let stored = NIOLockedValueBox<[Entry]>([])
 
-    var entries: [Entry] {
-        lock.lock()
-        defer { lock.unlock() }
-        return stored
+    public init() {}
+
+    public var entries: [Entry] {
+        stored.withLockedValue { $0 }
     }
 
-    func logger() -> Logger {
+    public func logger() -> Logger {
         Logger(label: "backendkit.test.capture") { _ in CapturingLogHandler(capture: self) }
     }
 
     fileprivate func append(_ entry: Entry) {
-        lock.lock()
-        defer { lock.unlock() }
-        stored.append(entry)
+        stored.withLockedValue { $0.append(entry) }
     }
 }
 

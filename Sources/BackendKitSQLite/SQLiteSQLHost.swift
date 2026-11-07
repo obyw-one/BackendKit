@@ -18,7 +18,7 @@ import SQLKit
 // A libSQL-only feature (embedded replica / remote) is NOT needed by SQLRepository, so
 // there is no custom libsql-swift driver here.
 
-public final class SQLiteSQLHost: @unchecked Sendable {
+public actor SQLiteSQLHost {
     /// Where the database lives.
     public enum Storage: Sendable {
         /// A private in-memory database, gone at `shutdown()`.
@@ -36,26 +36,16 @@ public final class SQLiteSQLHost: @unchecked Sendable {
         case wal = "WAL"
     }
 
+    // `SQLiteConnection` is declared `Sendable` by SQLiteNIO, so it is safe to read from the nonisolated
+    // methods below; the one piece of mutable state, `closing`, is actor-isolated.
     private let connection: SQLiteConnection
     private let logger: Logger
-    private let lifecycle = Lifecycle()
-
     /// Whether `shutdown()` (or the deinit close) has already taken the connection.
-    private final class Lifecycle: @unchecked Sendable {
-        private let lock = NSLock()
-        private var closing = false
-        /// `true` for the first caller only: that caller owns the close.
-        func claimClose() -> Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            if closing { return false }
-            closing = true
-            return true
-        }
-    }
+    private var closing = false
 
-    /// The injected engine: hand this to `SQLRepository`.
-    public let database: any SQLDatabase
+    /// The injected engine: hand this to `SQLRepository`. `nonisolated`: an immutable `Sendable` handle, so
+    /// `host.database` stays a synchronous read from any context.
+    nonisolated public let database: any SQLDatabase
 
     private init(connection: SQLiteConnection, logger: Logger) {
         self.connection = connection
@@ -90,7 +80,7 @@ public final class SQLiteSQLHost: @unchecked Sendable {
 
     /// `CREATE INDEX` that is a no-op when the index already exists. SQLKit's index builder has no
     /// `IF NOT EXISTS` (its dialects disagree on it), so the check reads SQLite's own catalogue.
-    public func createIndexIfNotExists(_ name: String, on table: String, columns: [String]) async throws {
+    nonisolated public func createIndexIfNotExists(_ name: String, on table: String, columns: [String]) async throws {
         let existing = try await database.select()
             .column("name")
             .from("sqlite_master")
@@ -116,7 +106,7 @@ public final class SQLiteSQLHost: @unchecked Sendable {
     /// (identifiers quoted by the dialect, defaults and checks serialised by SQLKit), `STRICT` is a
     /// compile-time constant, and no caller or runtime value is concatenated, so no injection
     /// surface is reintroduced.
-    public func createStrictTable(
+    nonisolated public func createStrictTable(
         _ name: String,
         ifNotExists: Bool = true,
         _ configure: (SQLCreateTableBuilder) -> SQLCreateTableBuilder
@@ -152,7 +142,9 @@ public final class SQLiteSQLHost: @unchecked Sendable {
 
     /// Close the connection. Call once, before the host is dropped.
     public func shutdown() async throws {
-        guard lifecycle.claimClose() else { return }
+        // Check and claim with no suspension between them: the actor admits no other caller in that window.
+        guard !closing else { return }
+        closing = true
         try await connection.close()
     }
 
@@ -161,7 +153,7 @@ public final class SQLiteSQLHost: @unchecked Sendable {
     /// store is an object whose lifetime ends by being released, not by an awaited call.
     /// The detached close keeps the connection alive until it completes.
     deinit {
-        guard lifecycle.claimClose() else { return }
+        guard !closing else { return }
         let connection = connection
         let logger = logger
         Task.detached {
