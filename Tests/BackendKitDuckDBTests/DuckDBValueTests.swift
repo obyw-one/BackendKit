@@ -82,6 +82,8 @@ struct DuckDBBindEncoderTests {
     func unrecognisableTokenThrows() {
         #expect(throws: DuckDBSQLError.self) { try DuckDBBindEncoder.bound(token: Data("not-json".utf8), of: String.self) }
         #expect(throws: DuckDBSQLError.self) { try DuckDBBindEncoder.bound(token: Data(), of: String.self) }
+        #expect(throws: DuckDBSQLError.self) { try DuckDBBindEncoder.bound(token: Data("truex".utf8), of: String.self) }
+        #expect(throws: DuckDBSQLError.self) { try DuckDBBindEncoder.bound(token: Data("fals".utf8), of: String.self) }
     }
 }
 

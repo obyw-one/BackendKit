@@ -77,13 +77,21 @@ enum DuckDBBindEncoder {
             throw DuckDBSQLError.unsupportedBind("\(type) produced an empty JSON value")
         }
         switch first {
-        case UInt8(ascii: "n"): return .null
-        case UInt8(ascii: "t"): return .bool(true)
-        case UInt8(ascii: "f"): return .bool(false)
+        case UInt8(ascii: "n"): return try literal("null", .null, token, type)
+        case UInt8(ascii: "t"): return try literal("true", .bool(true), token, type)
+        case UInt8(ascii: "f"): return try literal("false", .bool(false), token, type)
         case UInt8(ascii: "\""): return .string(try JSONDecoder().decode(String.self, from: token))
         case UInt8(ascii: "{"), UInt8(ascii: "["): return .string(try text(of: token, type))
         default: return try number(try text(of: token, type), type)
         }
+    }
+
+    /// A bare JSON literal: the whole token must BE the literal, not merely start with its first letter.
+    private static func literal(_ expected: String, _ value: DuckDBValue, _ token: Data, _ type: Any.Type) throws -> DuckDBValue {
+        guard token == Data(expected.utf8) else {
+            throw DuckDBSQLError.unsupportedBind("\(type) produced an unrecognised JSON literal: \(String(bytes: token, encoding: .utf8) ?? "\(token.count) non-UTF8 bytes")")
+        }
+        return value
     }
 
     private static func text(of token: Data, _ type: Any.Type) throws -> String {
