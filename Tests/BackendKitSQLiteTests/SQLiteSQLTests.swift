@@ -1,5 +1,7 @@
 import BackendKitSQL
 import BackendKitSQLite
+import CoreKit
+import CoreKitTestSupport
 import Foundation
 import SQLiteKit
 import SQLKit
@@ -31,6 +33,14 @@ final class SQLiteBenchmarkTests: XCTestCase {
 struct SQLiteRepositoryTests {
     static let hostile = "x'); DROP TABLE notes; --"
 
+    private static let scratch = TestScratch.forPackage()
+
+    /// A fresh `.db` path under the package's own `.tests/` (CoreKit `TestScratch`), never `NSTemporaryDirectory()`.
+    private func makeDatabasePath() throws -> (path: String, directory: URL) {
+        let directory = try Self.scratch.makeScratchDir(scope: "sqlite")
+        return (directory.appendingPathComponent("backendkit-sqlite.db").path, directory)
+    }
+
     private func roundTrip(_ host: SQLiteSQLHost) async throws {
         try await host.database.raw("CREATE TABLE notes (id TEXT PRIMARY KEY, title TEXT NOT NULL, count INTEGER NOT NULL)").run()
         let repo = SQLRepository<UUID, Note>(database: host.database, table: "notes")
@@ -60,8 +70,8 @@ struct SQLiteRepositoryTests {
 
     @Test("file-backed: round-trip, and data persists across a reopen")
     func file() async throws {
-        let path = NSTemporaryDirectory() + "backendkit-sqlite-\(UUID().uuidString).db"
-        defer { try? FileManager.default.removeItem(atPath: path) }
+        let (path, directory) = try makeDatabasePath()
+        defer { try? Self.scratch.removeScratchDir(directory) }
         let host = try await SQLiteSQLHost.open(storage: .file(path: path))
         do { try await roundTrip(host) } catch { try? await host.shutdown(); throw error }
         let repo = SQLRepository<UUID, Note>(database: host.database, table: "notes")
@@ -105,8 +115,12 @@ struct SQLiteConsumerDrivenTests {
         try await builder.run()
     }
 
-    private func tempPath() -> String {
-        NSTemporaryDirectory() + "backendkit-sqlite-\(UUID().uuidString).db"
+    private static let scratch = TestScratch.forPackage()
+
+    /// A fresh `.db` path under the package's own `.tests/` (CoreKit `TestScratch`), never `NSTemporaryDirectory()`.
+    private func makeDatabasePath() throws -> (path: String, directory: URL) {
+        let directory = try Self.scratch.makeScratchDir(scope: "sqlite")
+        return (directory.appendingPathComponent("backendkit-sqlite.db").path, directory)
     }
 
     @Test("a composite key addresses, upserts and deletes by every key column")
@@ -143,8 +157,8 @@ struct SQLiteConsumerDrivenTests {
 
     @Test("readOnlyFile reads an existing database and the engine refuses a write; a missing file does not appear")
     func readOnly() async throws {
-        let path = tempPath()
-        defer { try? FileManager.default.removeItem(atPath: path) }
+        let (path, directory) = try makeDatabasePath()
+        defer { try? Self.scratch.removeScratchDir(directory) }
         let writer = try await SQLiteSQLHost.open(storage: .file(path: path))
         try await createNotes(writer)
         let id = UUID()
@@ -157,17 +171,16 @@ struct SQLiteConsumerDrivenTests {
         await expectFailure { try await repo.save(id, data: Note(id: id, title: "x", count: 2)) }
         try await reader.shutdown()
 
-        let missing = tempPath()
+        let missing = directory.appendingPathComponent("missing.db").path
         await expectFailure { _ = try await SQLiteSQLHost.open(storage: .readOnlyFile(path: missing)) }
         #expect(!FileManager.default.fileExists(atPath: missing))
     }
 
     @Test("journalMode .wal is applied to a file database")
     func wal() async throws {
-        let path = tempPath()
-        defer {
-            for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) }
-        }
+        // The scratch directory also holds the -wal / -shm files the journal mode creates.
+        let (path, directory) = try makeDatabasePath()
+        defer { try? Self.scratch.removeScratchDir(directory) }
         let host = try await SQLiteSQLHost.open(storage: .file(path: path), journalMode: .wal)
         let row = try await host.database.raw("PRAGMA journal_mode").first()
         #expect(try row?.decode(column: "journal_mode", as: String.self).lowercased() == "wal")
@@ -176,13 +189,13 @@ struct SQLiteConsumerDrivenTests {
 
     @Test("a host released without shutdown() closes its connection (no SQLiteNIO deinit assertion)")
     func droppedHostCloses() async throws {
-        let path = tempPath()
-        defer { try? FileManager.default.removeItem(atPath: path) }
+        let (path, directory) = try makeDatabasePath()
+        defer { try? Self.scratch.removeScratchDir(directory) }
         do {
             let host = try await SQLiteSQLHost.open(storage: .file(path: path))
             try await createNotes(host)
         }
-        try await Task.sleep(for: .milliseconds(200))
+        try await TaskDeadline.sleep(.milliseconds(200))
         let reopened = try await SQLiteSQLHost.open(storage: .readOnlyFile(path: path))
         try await reopened.shutdown()
         let again = try await SQLiteSQLHost.open(storage: .memory)

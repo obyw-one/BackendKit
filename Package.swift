@@ -93,6 +93,8 @@ let package = Package(
                 "BackendKitSQL",
                 "BackendKitSQLite",
                 .product(name: "SQLKitBenchmark", package: "sql-kit"),
+                // Container / DIAssembly / @Resolve / TaskDeadline for the engine-swap and sleep tests.
+                .product(name: "CoreKit", package: "CoreKit"),
                 .product(name: "CoreKitTestSupport", package: "CoreKit"),
             ]
         ),

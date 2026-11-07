@@ -14,7 +14,7 @@ language = "swift"
 package_path = "."
 test_target_name = "BackendKitCoreTests"
 module_patterns = ["BackendKitCoreTests"]
-expected_test_min = 20
+expected_test_min = 25
 timeout_seconds = 600
 description = "BackendKitCore — the driver-free core: types, errors and the connection contract."
 
@@ -44,7 +44,7 @@ language = "swift"
 package_path = "."
 test_target_name = "BackendKitSQLiteTests"
 module_patterns = ["BackendKitSQLiteTests"]
-expected_test_min = 3
+expected_test_min = 15
 timeout_seconds = 600
 description = "BackendKitSQLite — SQLKit conformance benchmark + SQLRepository round-trips (memory, file) with a hostile-string bind. Offline: no live server, no env flag."
 
