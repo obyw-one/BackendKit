@@ -110,23 +110,65 @@ struct ManifestShapeTests {
         }
     }
 
-    @Test("DuckDB is offered on Apple platforms only, and the manifest names the upstream Linux failure")
-    func duckDBIsAppleOnly() throws {
+    @Test("DuckDB is offered on every platform: duckdb-swift on Apple, the official libduckdb (CDuckDB) on Linux, no gate left")
+    func duckDBIsOnEveryPlatform() throws {
         let manifest = try Self.readManifest()
-        let declaration = Self.lines(of: manifest, containing: "let duckDBPlatforms")
-        #expect(declaration.count == 1)
-        #expect(declaration.first?.contains(".linux") == false, "duckdb-swift does not compile on Linux; add .linux only with a Linux job that proves it")
-        #expect(declaration.first?.contains(".macOS") == true)
-        #expect(manifest.contains("_mantissa"), "the Linux exclusion must name the upstream failure it stands on")
+        // The Linux gate and its flag are gone; the platform lists name which binding each platform uses.
+        #expect(!manifest.contains("duckDBPlatforms"), "the Linux gate on DuckDB is removed; do not bring it back")
+        #expect(!manifest.contains("BACKENDKIT_DUCKDB"), "there is no compile flag: the driver is chosen by the operating system")
+        let apple = Self.lines(of: manifest, containing: "let duckDBSwiftPlatforms")
+        #expect(apple.count == 1)
+        #expect(apple.first?.contains(".linux") == false, "duckdb-swift does not compile on Linux")
+        #expect(apple.first?.contains(".macOS") == true && apple.first?.contains(".iOS") == true && apple.first?.contains(".tvOS") == true)
+        let linux = Self.lines(of: manifest, containing: "let libDuckDBPlatforms")
+        #expect(linux.count == 1)
+        #expect(linux.first?.contains("[.linux]") == true)
+        #expect(manifest.contains("_mantissa"), "the manifest must keep naming the upstream failure that keeps duckdb-swift off Linux")
+
         guard let range = Self.range(ofTargetNamed: "BackendKitDuckDB", in: manifest) else {
             Issue.record("BackendKitDuckDB target block not found in Package.swift")
             return
         }
         let block = String(manifest[range])
-        let driver = Self.lines(of: block, containing: "package: \"duckdb-swift\"")
-        #expect(driver.count == 1)
-        #expect(driver.allSatisfy { $0.contains("condition: .when(platforms: duckDBPlatforms)") })
-        #expect(block.contains(#".define("BACKENDKIT_DUCKDB", .when(platforms: duckDBPlatforms))"#))
+        let swiftBinding = Self.lines(of: block, containing: "package: \"duckdb-swift\"")
+        #expect(swiftBinding.count == 1)
+        #expect(swiftBinding.allSatisfy { $0.contains("condition: .when(platforms: duckDBSwiftPlatforms)") })
+        #expect(block.contains("duckDBLinuxDependencies"), "the Linux dependency (CDuckDB) is attached to the DuckDB target")
+        #expect(manifest.contains(#".target(name: "CDuckDB", condition: .when(platforms: libDuckDBPlatforms))"#))
+        #expect(manifest.contains(#".systemLibrary(name: "CDuckDB", pkgConfig: "duckdb")"#))
+    }
+
+    @Test("no DuckDB binary is committed or fetched by the manifest: Linux links an installed, checksum-verified library")
+    func noBinaryInTheRepository() throws {
+        let manifest = try Self.readManifest()
+        #expect(!manifest.contains(".binaryTarget"), "libduckdb is installed by Scripts/install-libduckdb.sh, not shipped as a binary target")
+        #expect(!manifest.contains("unsafeFlags"), "no unsafe flags: the library path comes from pkg-config")
+        let root = TestPackagePaths.packageRoot()
+        let binaryExtensions: Set<String> = ["so", "a", "dylib", "xcframework", "dll", "lib", "zip", "gz"]
+        for directory in ["Sources", "Scripts", "Tests"] {
+            guard let walker = FileManager.default.enumerator(at: root.appendingPathComponent(directory), includingPropertiesForKeys: nil) else { continue }
+            for case let file as URL in walker {
+                #expect(!binaryExtensions.contains(file.pathExtension), "\(file.lastPathComponent) looks like a committed binary or archive")
+            }
+        }
+    }
+
+    @Test("the facade: one engine over a driver protocol, two drivers, the platform chosen in exactly one place")
+    func facadeShape() throws {
+        let sources = TestPackagePaths.packageRoot().appendingPathComponent("Sources/BackendKitDuckDB")
+        let names = try FileManager.default.contentsOfDirectory(atPath: sources.path)
+        #expect(!names.contains("DuckDBUnavailable.swift"), "DuckDB is no longer unavailable anywhere")
+        func text(_ name: String) throws -> String { try String(contentsOf: sources.appendingPathComponent(name), encoding: .utf8) }
+        // Only the two drivers and the selection line know a binding exists.
+        let bindingFiles = ["DuckDBSwiftDriver.swift", "DuckDBCAPIDriver.swift"]
+        for name in names where name.hasSuffix(".swift") && !bindingFiles.contains(name) {
+            let source = try text(name)
+            #expect(!source.contains("import DuckDB\n") && !source.contains("import CDuckDB"), "\(name) must not import a DuckDB binding: that is the driver's job")
+            if name != "DuckDBDriverProtocol.swift" {
+                #expect(!source.contains("#if os("), "\(name) must not branch on the platform: the facade does that once")
+            }
+        }
+        #expect(try text("DuckDBDriverProtocol.swift").components(separatedBy: "#if os(").count == 2, "the platform is selected in one #if chain")
     }
 
     @Test("the Linux pipeline exists and builds the test targets too")
@@ -139,6 +181,9 @@ struct ManifestShapeTests {
         #expect(pipeline.contains("swift build --build-tests"))
         #expect(pipeline.contains("swift test --skip-build"))
         #expect(pipeline.contains("manual"))
+        // The DuckDB library is installed, verified, and made visible to both pkg-config and the dynamic loader.
+        #expect(pipeline.contains("sh Scripts/install-libduckdb.sh"))
+        #expect(pipeline.contains("PKG_CONFIG_PATH") && pipeline.contains("LD_LIBRARY_PATH"))
     }
 
     // MARK: - Helper

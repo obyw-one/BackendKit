@@ -1,11 +1,10 @@
-#if BACKENDKIT_DUCKDB
 import SQLKit
 
 // MARK: - DuckDBDialect
 
 //
 // DuckDB's SQL is Postgres-flavoured, so this starts from `PostgresDialect` and changes
-// only what differs (each point verified against DuckDB 2.1.0-dev84836, not assumed):
+// only what differs (each point verified against DuckDB 2.1.0-dev84836 through duckdb-swift and against libduckdb 2.0.0 through the C API, not assumed):
 //   - `$n` placeholders are kept (DuckDB accepts `$1`), `"` identifier quote and `'` string quote too.
 //   - NO `GENERATED ... AS IDENTITY`: DuckDB has no identity columns (auto ids are
 //     `DEFAULT nextval('seq')`). An auto-increment key therefore renders as
@@ -63,4 +62,3 @@ public struct DuckDBDialect: SQLDialect {
         return SQLFunction("json_extract", args: column, SQLLiteral.string(jsonPath))
     }
 }
-#endif

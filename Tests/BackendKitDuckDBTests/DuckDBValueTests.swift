@@ -1,5 +1,5 @@
-#if BACKENDKIT_DUCKDB
 import Foundation
+@_spi(CodableUtilities) import SQLKit
 import Testing
 @testable import BackendKitDuckDB
 
@@ -89,6 +89,19 @@ struct DuckDBBindEncoderTests {
 
 // MARK: - DuckDBValueDecoderTests
 
+@Suite("DuckDBBindEncoder — SQLKit's wrapped Decimal, Date and Data keep their kind")
+struct DuckDBWrappedBindTests {
+    @Test("a Decimal, Date or Data inside SQLKit's FakeSendableCodable binds as itself, not as a Double")
+    func wrappedValuesKeepTheirKind() throws {
+        let decimal = try #require(Decimal(string: "12345678901234567890123456.123456"))
+        #expect(try DuckDBBindEncoder.encode(FakeSendableCodable(decimal)) == .decimal(decimal))
+        let date = Date(timeIntervalSince1970: 1_700_000_000.5)
+        #expect(try DuckDBBindEncoder.encode(FakeSendableCodable(date)) == .date(date))
+        let bytes = Data([0, 1, 255])
+        #expect(try DuckDBBindEncoder.encode(FakeSendableCodable(bytes)) == .blob(bytes))
+    }
+}
+
 @Suite("DuckDBValueDecoder — a value that fits no representation says why")
 struct DuckDBValueDecoderTests {
     private func mismatch(_ work: () throws -> Void) -> String? {
@@ -150,5 +163,17 @@ struct DuckDBValueDecoderTests {
         #expect(try DuckDBValueDecoder.decode(Switch.self, from: .int(1)) == .on)
         #expect(try DuckDBValueDecoder.decode(Switch.self, from: .int(0)) == .off)
     }
+
+    @Test("Decimal?, Date? and Data? decode their wrapped value exactly, and NULL as nil")
+    func optionalScalarsDecodeExactly() throws {
+        let digits = try #require(Decimal(string: "12345678901234567890123456.123456"))
+        #expect(try DuckDBValueDecoder.decode(Decimal?.self, from: .decimal(digits)) == digits)
+        #expect(try DuckDBValueDecoder.decode(Decimal?.self, from: .null) == nil)
+        let date = Date(timeIntervalSince1970: 1_700_000_000.5)
+        #expect(try DuckDBValueDecoder.decode(Date?.self, from: .date(date)) == date)
+        #expect(try DuckDBValueDecoder.decode(Date?.self, from: .null) == nil)
+        let bytes = Data([0, 1, 255])
+        #expect(try DuckDBValueDecoder.decode(Data?.self, from: .blob(bytes)) == bytes)
+        #expect(try DuckDBValueDecoder.decode(Data?.self, from: .null) == nil)
+    }
 }
-#endif

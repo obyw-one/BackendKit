@@ -1,11 +1,15 @@
 # .woodpecker/linux-build.yml — prove BackendKit builds AND passes its tests on Linux (spec b4f8c3a1)
 #
-# The backend half of the fleet runs on Linux, so every product that is offered there must build with ZERO Apple
-# framework and pass its suite. Which products those are is declared once in Package.swift ("Platform split"):
-# Core, SQL, SQLite and Postgres build here; the DuckDB product is gated by `duckDBPlatforms`. A product that is
-# not offered on Linux compiles to an empty module, so `swift build` still covers the whole package. Runs on
-# ci.obyw.one (Woodpecker), on the vendor-neutral official swift Linux image — the fleet convention
-# (CoreKit's .woodpecker/linux-build.yml is the model for this file).
+# The backend half of the fleet runs on Linux, so every product must build with ZERO Apple framework and pass its
+# suite there. All five products are offered on Linux (Package.swift, "Platform split"). Four of them are pure Swift
+# packages. BackendKitDuckDB is built on the official libduckdb through its C API, so this pipeline first installs that
+# library: Scripts/install-libduckdb.sh downloads the release pinned in Scripts/libduckdb.lock for the architecture it
+# runs on (amd64 or arm64), compares its sha256 with the pinned one and FAILS THE JOB on a failed download or a
+# mismatch; nothing is built from an unverified file. Runs on Woodpecker, on the vendor-neutral official swift Linux
+# image — the fleet convention (CoreKit's .woodpecker/linux-build.yml is the model for this file).
+#
+# Steps run in separate containers that share only the workspace, so the library is installed into the workspace
+# (.libduckdb, git-ignored) and every later step points pkg-config (build) and the dynamic loader (run) at it.
 
 when:
   event: [pull_request, push, manual]  # manual = the "Exécuter un pipeline" button (operator-triggered run)
@@ -18,15 +22,30 @@ labels:
 
 variables:
   - &swift_image "swift:6.3-jammy"  # Docker Hub official Linux stable; BackendKit is swift-tools 6.1, within range
+  # Where the pinned libduckdb is installed (inside the workspace, which every step shares): pkg-config finds it at
+  # build time, the dynamic loader at run time.
+  - &libduckdb_env
+    LIBDUCKDB_PREFIX: ${CI_WORKSPACE}/.libduckdb
+    PKG_CONFIG_PATH: ${CI_WORKSPACE}/.libduckdb/lib/pkgconfig
+    LD_LIBRARY_PATH: ${CI_WORKSPACE}/.libduckdb/lib
 
 steps:
+  libduckdb:
+    image: *swift_image
+    environment: *libduckdb_env
+    commands:
+      - uname -m
+      - sh Scripts/install-libduckdb.sh
+
   linux-build:
     image: *swift_image
+    environment: *libduckdb_env
     commands:
       - swift --version
       - swift build --build-tests   # every target AND every test target, so the test code is compiled on Linux too
 
-  # Compiling is not working: the whole suite runs here too (Swift Testing and XCTest).
+  # Compiling is not working: the whole suite runs here too (Swift Testing and XCTest), including the DuckDB behaviour
+  # suite that runs unchanged on Apple platforms against duckdb-swift.
   #
   # Direct SwiftPM on purpose, the one exception to "kagami only": kagami has no Linux path yet
   # (macOS-only package, private dependencies; spec 4965545a). Replace this step with kagami once it does.
@@ -36,5 +55,6 @@ steps:
   # and the manifest shape, not a round-trip against a server.
   linux-test:
     image: *swift_image
+    environment: *libduckdb_env
     commands:
       - swift test --skip-build

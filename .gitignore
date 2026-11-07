@@ -47,3 +47,6 @@
 .kagami/*
 !.kagami/scopes.override.toml
 
+
+# libduckdb installed into the workspace by the Linux CI job (Scripts/install-libduckdb.sh .libduckdb)
+.libduckdb/

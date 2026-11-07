@@ -1,6 +1,5 @@
-#if BACKENDKIT_DUCKDB
 import Foundation
-import SQLKit
+@_spi(CodableUtilities) import SQLKit
 
 // MARK: - DuckDBValue
 
@@ -16,11 +15,30 @@ enum DuckDBValue: Sendable, Equatable {
     case date(Date)
 }
 
-/// Failures of the bind (encode) and row (decode) paths.
-public enum DuckDBSQLError: Error, Sendable, Equatable {
+/// Failures of the bind (encode) and row (decode) paths, and of DuckDB itself.
+public enum DuckDBSQLError: Error, Sendable, Equatable, LocalizedError {
     case unsupportedBind(String)
     case missingColumn(String)
     case typeMismatch(String)
+    /// DuckDB rejected the operation (open, prepare, bind or execute); carries DuckDB's own error text, unmodified.
+    case engine(String)
+    /// A result column has a DuckDB type this package does not decode. Nothing is dropped or turned into NULL:
+    /// cast the column to a supported type (e.g. `CAST(x AS VARCHAR)`) in the query.
+    case unsupportedColumnType(column: String, type: String)
+    /// The host was shut down.
+    case shutDown
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedBind(let detail): "DuckDB: cannot bind \(detail)"
+        case .missingColumn(let name): "DuckDB: no column named \(name)"
+        case .typeMismatch(let detail): "DuckDB: type mismatch: \(detail)"
+        case .engine(let message): message
+        case .unsupportedColumnType(let column, let type):
+            "DuckDB: column \"\(column)\" has type \(type), which BackendKitDuckDB does not decode; CAST it to a supported type in the query"
+        case .shutDown: "DuckDB: the host is shut down"
+        }
+    }
 }
 
 // MARK: - Encoding (Swift value → bound parameter)
@@ -49,6 +67,19 @@ enum DuckDBBindEncoder {
         case let v as Date: .date(v)
         case let v as Data: .blob(v)
         case let v as Decimal: .decimal(v)
+        default: wrapped(value)
+        }
+    }
+
+    /// SQLKit hands a model's `Decimal`, `Date` and `Data` fields to the driver inside its `FakeSendableCodable` wrapper
+    /// (they are not `Sendable`). Without unwrapping them they would fall through to the JSON route below and arrive as
+    /// a Double: a Decimal would silently lose every digit a Double cannot hold, and a Date could not be bound as a
+    /// timestamp at all.
+    private static func wrapped(_ value: any Encodable) -> DuckDBValue? {
+        switch value {
+        case let v as FakeSendableCodable<Decimal>: .decimal(v.value)
+        case let v as FakeSendableCodable<Date>: .date(v.value)
+        case let v as FakeSendableCodable<Data>: .blob(v.value)
         default: nil
         }
     }
@@ -188,6 +219,7 @@ enum DuckDBValueDecoder {
     }
 
     private static func scalar<T>(_ type: T.Type, from value: DuckDBValue) throws -> T? {
+        if value != .null, let optional = try optionalScalar(type, from: value) { return optional }
         if type == Bool.self { return try bool(value) as? T }
         if let integerType = type as? any FixedWidthInteger.Type { return try integer(integerType, value) as? T }
         if type == Double.self { return try double(value) as? T }
@@ -197,6 +229,16 @@ enum DuckDBValueDecoder {
         if type == UUID.self { return try uuid(value) as? T }
         if type == Date.self { return try date(value) as? T }
         if type == Data.self { return try data(value) as? T }
+        return nil
+    }
+
+    /// `Decimal?`, `Date?` and `Data?` decode their wrapped scalar exactly like the non-optional form. The JSON-fragment
+    /// route cannot serve them: it would carry a Decimal through a JSON number (losing digits beyond what a Double
+    /// holds, silently) and has no fragment at all for a Date or a Data.
+    private static func optionalScalar<T>(_ type: T.Type, from value: DuckDBValue) throws -> T? {
+        if type == Decimal?.self { return try decimal(value) as? T }
+        if type == Date?.self { return try date(value) as? T }
+        if type == Data?.self { return try data(value) as? T }
         return nil
     }
 
@@ -298,4 +340,3 @@ struct DuckDBSQLRow: SQLRow {
         return try DuckDBValueDecoder.decode(D.self, from: values[index])
     }
 }
-#endif
