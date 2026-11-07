@@ -1,4 +1,3 @@
-#if BACKENDKIT_POSTGRES
 import BackendKitPostgres
 import Foundation
 import SQLKit
@@ -48,4 +47,3 @@ struct SQLRepositoryLiveTests {
         try await host.shutdown()
     }
 }
-#endif

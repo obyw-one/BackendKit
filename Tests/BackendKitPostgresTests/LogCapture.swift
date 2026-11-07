@@ -1,4 +1,3 @@
-#if BACKENDKIT_POSTGRES
 import Foundation
 import Logging
 
@@ -49,4 +48,3 @@ struct CapturingLogHandler: LogHandler {
         capture.append(.init(level: event.level, message: "\(event.message)", metadata: event.metadata ?? [:]))
     }
 }
-#endif

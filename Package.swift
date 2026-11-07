@@ -7,16 +7,21 @@ import PackageDescription
 // MARK: - Platform split
 //
 // `platforms:` below declares Apple MINIMUMS only; SwiftPM cannot exclude a platform from a single target.
-// What each product is available on is therefore declared HERE, once, and applied two ways: the engine
-// dependencies carry `condition: .when(platforms:)`, and the same list defines a compilation flag
-// (`BACKENDKIT_POSTGRES`, `BACKENDKIT_DUCKDB`) that wraps the target's sources. Off its platforms a
-// target is an empty module: importing it works, USING one of its types is a compile error (the
-// Postgres types and the DuckDB ones carry an `unavailable` stub that says why), never a runtime surprise.
+// What each product is available on is therefore declared HERE, once. Every product is offered everywhere
+// EXCEPT DuckDB on Linux: its engine dependency carries `condition: .when(platforms: duckDBPlatforms)` and the same
+// list defines a compilation flag (`BACKENDKIT_DUCKDB`) that wraps the target's sources. Off its platforms the
+// target is an empty module: importing it works, USING one of its types is a compile error (the DuckDB types carry
+// an `unavailable` stub that says why), never a runtime surprise.
 //
 //   BackendKitCore, BackendKitSQL, BackendKitSQLite   macOS, iOS, tvOS, Linux
-//   BackendKitPostgres (PostgresNIO, PostgresKit)     macOS, Linux  — a server-side engine
+//   BackendKitPostgres (PostgresNIO, PostgresKit)     macOS, iOS, tvOS, Linux
 //   BackendKitDuckDB   (duckdb-swift)                 macOS, iOS, tvOS — NOT Linux, see below
-let serverPlatforms: [Platform] = [.macOS, .linux]
+//
+// Postgres on iOS and tvOS was measured, not assumed (2026-11-07): the live Codable round-trip
+// (`PostgresRepository`, over `PostgresClientHost`) and the live SQLRepository round-trip (over `PostgresSQLHost`)
+// connected to a real Postgres 17 (SCRAM auth), wrote and read back on an iOS 26.5 Simulator and a tvOS 26.5
+// Simulator through `xcodebuild test`, and the server's own log shows the statements. A Simulator is not a device
+// (it shares the Mac's network stack and permissions), so a run on hardware is still the consumer's to confirm.
 //
 // DuckDB is not offered on Linux because duckdb-swift does not compile there. Measured 2026-11-07 on
 // swift:6.3-jammy (arm64): `Sources/DuckDB/Internal/CTypeUtilities.swift:283-287` and
@@ -37,7 +42,7 @@ let package = Package(
     platforms: [.macOS(.v14), .iOS(.v17), .tvOS(.v18)],
     products: [
         .library(name: "BackendKitCore", targets: ["BackendKitCore"]),
-        // macOS and Linux only: PostgresNIO / PostgresKit are not linked anywhere else (see "Platform split").
+        // Every platform (see "Platform split"): measured live on macOS, iOS and tvOS Simulators and on Linux.
         .library(name: "BackendKitPostgres", targets: ["BackendKitPostgres"]),
         // Engine-neutral (SQLKit only, no driver), so it is on every platform the SQLite engine is. BR-SQL-03 stands in
         // its original sense: NetKit's wire layer never imports it. What is server-side is the Postgres ENGINE, not this.
@@ -83,10 +88,9 @@ let package = Package(
             dependencies: [
                 "BackendKitCore",
                 "BackendKitSQL",
-                .product(name: "PostgresNIO", package: "postgres-nio", condition: .when(platforms: serverPlatforms)),
-                .product(name: "PostgresKit", package: "postgres-kit", condition: .when(platforms: serverPlatforms)),
-            ],
-            swiftSettings: [.define("BACKENDKIT_POSTGRES", .when(platforms: serverPlatforms))]
+                .product(name: "PostgresNIO", package: "postgres-nio"),
+                .product(name: "PostgresKit", package: "postgres-kit"),
+            ]
         ),
         .target(
             name: "BackendKitSQLite",
@@ -141,21 +145,19 @@ let package = Package(
             name: "BackendKitSQLTests",
             dependencies: [
                 "BackendKitSQL",
-                .target(name: "BackendKitPostgres", condition: .when(platforms: serverPlatforms)),
+                "BackendKitPostgres",
                 .product(name: "SQLKitBenchmark", package: "sql-kit"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "CoreKitTestSupport", package: "CoreKit"),
-            ],
-            swiftSettings: [.define("BACKENDKIT_POSTGRES", .when(platforms: serverPlatforms))]
+            ]
         ),
         .testTarget(
             name: "BackendKitPostgresTests",
             dependencies: [
-                .target(name: "BackendKitPostgres", condition: .when(platforms: serverPlatforms)),
+                "BackendKitPostgres",
                 .product(name: "CoreKitTestSupport", package: "CoreKit"),
                 .product(name: "Logging", package: "swift-log"),
-            ],
-            swiftSettings: [.define("BACKENDKIT_POSTGRES", .when(platforms: serverPlatforms))]
+            ]
         ),
     ]
 )

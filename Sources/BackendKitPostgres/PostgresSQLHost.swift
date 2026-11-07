@@ -1,4 +1,3 @@
-#if BACKENDKIT_POSTGRES
 @preconcurrency import AsyncKit
 import BackendKitCore
 import BackendKitSQL
@@ -54,4 +53,3 @@ public final class PostgresSQLHost: @unchecked Sendable {
         try await group.shutdownGracefully()
     }
 }
-#endif

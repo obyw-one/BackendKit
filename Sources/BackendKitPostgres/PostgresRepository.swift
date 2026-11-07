@@ -1,4 +1,3 @@
-#if BACKENDKIT_POSTGRES
 import BackendKitCore
 import CoreKit
 import Foundation
@@ -170,4 +169,3 @@ public actor PostgresRepository<ID, Model>: RepositoryProtocol
         return try decoder.decode(Model.self, from: data)
     }
 }
-#endif

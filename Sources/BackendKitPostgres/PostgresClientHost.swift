@@ -1,4 +1,3 @@
-#if BACKENDKIT_POSTGRES
 import BackendKitCore
 import CoreKit
 import Foundation
@@ -103,4 +102,3 @@ enum ReconnectLoop {
         }
     }
 }
-#endif
