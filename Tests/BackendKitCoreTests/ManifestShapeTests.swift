@@ -73,10 +73,13 @@ struct ManifestShapeTests {
         block.split(separator: "\n").filter { $0.contains(needle) }
     }
 
-    @Test("the Postgres drivers are conditional on macOS and Linux, and the compile flag follows the same list")
-    func postgresDriversAreServerPlatformsOnly() throws {
+    @Test("the Postgres drivers are offered on every platform: no platform condition, no compile flag")
+    func postgresDriversAreOnEveryPlatform() throws {
         let manifest = try Self.readManifest()
-        #expect(manifest.contains("let serverPlatforms: [Platform] = [.macOS, .linux]"))
+        // Measured live on macOS, an iOS Simulator, a tvOS Simulator and Linux (2026-11-07); the gate that
+        // once kept iOS and tvOS out is gone, and must not creep back without the same kind of evidence.
+        #expect(!manifest.contains("serverPlatforms"))
+        #expect(!manifest.contains("BACKENDKIT_POSTGRES"))
         guard let range = Self.range(ofTargetNamed: "BackendKitPostgres", in: manifest) else {
             Issue.record("BackendKitPostgres target block not found in Package.swift")
             return
@@ -86,14 +89,13 @@ struct ManifestShapeTests {
             let declarations = Self.lines(of: block, containing: "name: \"\(driver)\"")
             #expect(declarations.count == 1, "\(driver) must be declared exactly once")
             #expect(
-                declarations.allSatisfy { $0.contains("condition: .when(platforms: serverPlatforms)") },
-                "\(driver) must be conditional on serverPlatforms, or it is compiled for iOS and tvOS"
+                declarations.allSatisfy { !$0.contains("condition:") },
+                "\(driver) must not carry a platform condition: Postgres runs on iOS and tvOS (measured)"
             )
         }
-        #expect(block.contains(#".define("BACKENDKIT_POSTGRES", .when(platforms: serverPlatforms))"#))
     }
 
-    @Test("Core, SQL and SQLite — the targets iOS and tvOS build — never reach a Postgres driver")
+    @Test("Core, SQL and SQLite stay engine-neutral — they never reach a Postgres driver")
     func iosCapableTargetsAvoidPostgres() throws {
         let manifest = try Self.readManifest()
         for name in ["BackendKitCore", "BackendKitSQL", "BackendKitSQLite"] {
@@ -103,7 +105,7 @@ struct ManifestShapeTests {
             }
             let block = String(manifest[range])
             for forbidden in ["PostgresNIO", "PostgresKit", "postgres-nio", "postgres-kit", "BackendKitPostgres"] {
-                #expect(!block.contains(forbidden), "\(name) must not reach '\(forbidden)': it has to build for iOS and tvOS")
+                #expect(!block.contains(forbidden), "\(name) must not reach '\(forbidden)': it is engine-neutral, and a consumer of it pays for no other engine")
             }
         }
     }

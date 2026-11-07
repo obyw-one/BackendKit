@@ -1,4 +1,3 @@
-#if BACKENDKIT_POSTGRES
 import Foundation
 import Logging
 import Testing
@@ -97,4 +96,3 @@ private actor Counter {
         return value
     }
 }
-#endif

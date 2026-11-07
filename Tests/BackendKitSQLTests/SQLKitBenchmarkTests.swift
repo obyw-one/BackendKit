@@ -1,4 +1,3 @@
-#if BACKENDKIT_POSTGRES
 import BackendKitPostgres
 import SQLKitBenchmark
 import XCTest
@@ -18,4 +17,3 @@ final class SQLKitBenchmarkTests: XCTestCase {
         try await host.shutdown()
     }
 }
-#endif
