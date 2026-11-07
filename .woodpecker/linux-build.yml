@@ -11,8 +11,8 @@ when:
   event: [pull_request, push, manual]  # manual = the "Exécuter un pipeline" button (operator-triggered run)
   branch: [develop, "epic/*", "feat/*", "fix/*", "agent/*", "story/*"]
 
-# Pin to the nuc-dev Docker agent. Without a platform label the Mac agent (local
-# backend, runs on the host, ignores image:) is also eligible for this workflow.
+# A Linux gate must run on a Linux Docker agent. Without a platform label, any
+# connected agent is eligible, whatever its OS or backend.
 labels:
   platform: linux/amd64
 
