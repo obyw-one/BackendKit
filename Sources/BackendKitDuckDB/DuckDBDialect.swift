@@ -4,7 +4,7 @@ import SQLKit
 
 //
 // DuckDB's SQL is Postgres-flavoured, so this starts from `PostgresDialect` and changes
-// only what differs (each point verified against DuckDB 2.1.0-dev84836 through duckdb-swift and against libduckdb 2.0.0 through the C API, not assumed):
+// only what differs (each point verified against DuckDB 2.1.0-dev84836 through duckdb-swift, not assumed; the SQLKit conformance suites and the dialect-dependent tests also pass unchanged on libduckdb 2.0.0 through the C API):
 //   - `$n` placeholders are kept (DuckDB accepts `$1`), `"` identifier quote and `'` string quote too.
 //   - NO `GENERATED ... AS IDENTITY`: DuckDB has no identity columns (auto ids are
 //     `DEFAULT nextval('seq')`). An auto-increment key therefore renders as

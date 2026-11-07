@@ -164,8 +164,19 @@ struct ManifestShapeTests {
         for name in names where name.hasSuffix(".swift") && !bindingFiles.contains(name) {
             let source = try text(name)
             #expect(!source.contains("import DuckDB\n") && !source.contains("import CDuckDB"), "\(name) must not import a DuckDB binding: that is the driver's job")
+            // Concurrency is the compiler's to check: the driver is owned by the engine actor, so nothing here needs a lock,
+            // an unchecked Sendable or an unsafe global.
+            for banned in ["@unchecked", "nonisolated(unsafe)", "NSLock", "DispatchQueue", "Mutex"] {
+                #expect(!source.contains(banned), "\(name) must not use \(banned): own state with an actor")
+            }
             if name != "DuckDBDriverProtocol.swift" {
                 #expect(!source.contains("#if os("), "\(name) must not branch on the platform: the facade does that once")
+            }
+        }
+        for name in bindingFiles {
+            let source = try text(name)
+            for banned in ["@unchecked", "nonisolated(unsafe)", "NSLock", "DispatchQueue", "Mutex"] {
+                #expect(!source.contains(banned), "\(name) must not use \(banned): the driver is owned by the engine actor")
             }
         }
         #expect(try text("DuckDBDriverProtocol.swift").components(separatedBy: "#if os(").count == 2, "the platform is selected in one #if chain")
