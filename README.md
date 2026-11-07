@@ -7,9 +7,19 @@ The engine-agnostic database connection seam of the fleet, one product per engin
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
 | `BackendKitCore`     | `DBConnectionConfiguring`, `PostgresConnectionConfig(environment:firstChoicePrefix:)`, `ConnectionPolicy`, `ConnectionInjectionRatchet` | none         |
 | `BackendKitPostgres` | `PostgresClientHost`, `PostgresClient.Configuration.make(connection:policy:)`, `PostgresRepository<ID, Model>`, `PostgresSQLHost`       | postgres-nio |
-| `BackendKitSQL`      | `SQLRepository<ID, Model>` — one typed, parameter-binding repository over any SQLKit `SQLDatabase` (server-side only)                   | SQLKit       |
+| `BackendKitSQL`      | `SQLRepository<ID, Model>` — one typed, parameter-binding repository over any SQLKit `SQLDatabase` (engine-neutral)                      | SQLKit       |
 | `BackendKitSQLite`   | `SQLiteSQLHost` — file / in-memory SQLite engine for `SQLRepository`                                                                    | sqlite-kit   |
 | `BackendKitDuckDB`   | `DuckDBSQLHost` — embedded, single-writer DuckDB engine for `SQLRepository`                                                             | duckdb-swift |
+
+## Platforms
+
+| product                                          | macOS | iOS / tvOS | Linux |
+| ------------------------------------------------ | :---: | :--------: | :---: |
+| `BackendKitCore`, `BackendKitSQL`, `BackendKitSQLite` | yes   | yes        | yes   |
+| `BackendKitPostgres` (PostgresNIO, PostgresKit)  | yes   | no         | yes   |
+| `BackendKitDuckDB` (duckdb-swift)                | yes   | yes        | no    |
+
+`platforms:` in `Package.swift` declares Apple minimums only; which product exists where is declared once, in the manifest's "Platform split", through conditional target dependencies and a matching compilation flag. Off its platforms a product is an empty module whose types are `unavailable` with a message that says why, so using a Postgres type on iOS (or a DuckDB type on Linux) is a compile error. DuckDB is not offered on Linux because duckdb-swift does not compile there (it reads `Foundation.Decimal`'s `_mantissa` / `_length`, which Linux does not expose); the manifest records the failure. `.woodpecker/linux-build.yml` builds and tests the package on Linux.
 
 Rules of the seam:
 

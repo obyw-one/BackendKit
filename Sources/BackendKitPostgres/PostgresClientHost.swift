@@ -1,3 +1,4 @@
+#if BACKENDKIT_POSTGRES
 import BackendKitCore
 import CoreKit
 import Foundation
@@ -47,21 +48,7 @@ public final class PostgresClientHost: @unchecked Sendable {
         self.logger = logger
         let log = logger
         runTask = Task {
-            var attempt = 0
-            while !Task.isCancelled {
-                await client.run()
-                if Task.isCancelled || !reconnect { return }
-                attempt += 1
-                let backoffSeconds = min(60, 1 << min(attempt, 6))
-                if attempt <= 3 {
-                    log.warning(
-                        "pgClient.run() returned — reconnecting in \(backoffSeconds)s (attempt \(attempt))"
-                    )
-                } else if attempt % 10 == 0 {
-                    log.warning("pgClient still down after \(attempt) retries — backoff \(backoffSeconds)s")
-                }
-                try? await TaskDeadline.sleep(.seconds(backoffSeconds))
-            }
+            await ReconnectLoop.run(reconnect: reconnect, logger: log) { await client.run() }
         }
     }
 
@@ -74,3 +61,46 @@ public final class PostgresClientHost: @unchecked Sendable {
         runTask.cancel()
     }
 }
+
+// MARK: - ReconnectLoop
+
+/// The reconnect policy of `PostgresClientHost`, apart from the client so the backoff and the
+/// cancellation handling are testable without a server: `serve` is `PostgresClient.run()`, `sleep`
+/// is `TaskDeadline.sleep`.
+enum ReconnectLoop {
+    static func run(
+        reconnect: Bool,
+        logger: Logger,
+        serve: @Sendable () async -> Void,
+        sleep: @Sendable (Duration) async throws -> Void = { try await TaskDeadline.sleep($0) }
+    ) async {
+        var attempt = 0
+        while !Task.isCancelled {
+            await serve()
+            if Task.isCancelled || !reconnect { return }
+            attempt += 1
+            let backoffSeconds = min(60, 1 << min(attempt, 6))
+            if attempt <= 3 {
+                logger.warning(
+                    "pgClient.run() returned — reconnecting in \(backoffSeconds)s (attempt \(attempt))"
+                )
+            } else if attempt % 10 == 0 {
+                logger.warning("pgClient still down after \(attempt) retries — backoff \(backoffSeconds)s")
+            }
+            do {
+                try await sleep(.seconds(backoffSeconds))
+            } catch is CancellationError {
+                // `TaskDeadline.sleep` throws only `CancellationError`: the host was closed during the
+                // backoff. That is the loop's stop signal, so leave deliberately instead of re-entering `serve()`.
+                logger.debug("pgClient reconnect loop cancelled during backoff — stopping")
+                return
+            } catch {
+                // Not a documented outcome of the sleep. Looping again would retry with no backoff at all,
+                // so stop the loop and say why rather than hiding it.
+                logger.error("pgClient reconnect backoff sleep failed — reconnect loop stopped", metadata: ["error": "\(error)"])
+                return
+            }
+        }
+    }
+}
+#endif

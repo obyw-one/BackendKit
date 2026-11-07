@@ -1,3 +1,4 @@
+#if BACKENDKIT_DUCKDB
 import DuckDB
 import Foundation
 
@@ -128,3 +129,4 @@ actor DuckDBEngine {
         }
     }
 }
+#endif

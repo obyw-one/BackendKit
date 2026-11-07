@@ -66,6 +66,79 @@ struct ManifestShapeTests {
         #expect(manifest.contains(#".library(name: "BackendKitPostgres""#))
     }
 
+    // MARK: - Platform split
+
+    /// The lines of `block` that mention `needle`.
+    private static func lines(of block: String, containing needle: String) -> [Substring] {
+        block.split(separator: "\n").filter { $0.contains(needle) }
+    }
+
+    @Test("the Postgres drivers are conditional on macOS and Linux, and the compile flag follows the same list")
+    func postgresDriversAreServerPlatformsOnly() throws {
+        let manifest = try Self.readManifest()
+        #expect(manifest.contains("let serverPlatforms: [Platform] = [.macOS, .linux]"))
+        guard let range = Self.range(ofTargetNamed: "BackendKitPostgres", in: manifest) else {
+            Issue.record("BackendKitPostgres target block not found in Package.swift")
+            return
+        }
+        let block = String(manifest[range])
+        for driver in ["PostgresNIO", "PostgresKit"] {
+            let declarations = Self.lines(of: block, containing: "name: \"\(driver)\"")
+            #expect(declarations.count == 1, "\(driver) must be declared exactly once")
+            #expect(
+                declarations.allSatisfy { $0.contains("condition: .when(platforms: serverPlatforms)") },
+                "\(driver) must be conditional on serverPlatforms, or it is compiled for iOS and tvOS"
+            )
+        }
+        #expect(block.contains(#".define("BACKENDKIT_POSTGRES", .when(platforms: serverPlatforms))"#))
+    }
+
+    @Test("Core, SQL and SQLite — the targets iOS and tvOS build — never reach a Postgres driver")
+    func iosCapableTargetsAvoidPostgres() throws {
+        let manifest = try Self.readManifest()
+        for name in ["BackendKitCore", "BackendKitSQL", "BackendKitSQLite"] {
+            guard let range = Self.range(ofTargetNamed: name, in: manifest) else {
+                Issue.record("\(name) target block not found in Package.swift")
+                continue
+            }
+            let block = String(manifest[range])
+            for forbidden in ["PostgresNIO", "PostgresKit", "postgres-nio", "postgres-kit", "BackendKitPostgres"] {
+                #expect(!block.contains(forbidden), "\(name) must not reach '\(forbidden)': it has to build for iOS and tvOS")
+            }
+        }
+    }
+
+    @Test("DuckDB is offered on Apple platforms only, and the manifest names the upstream Linux failure")
+    func duckDBIsAppleOnly() throws {
+        let manifest = try Self.readManifest()
+        let declaration = Self.lines(of: manifest, containing: "let duckDBPlatforms")
+        #expect(declaration.count == 1)
+        #expect(declaration.first?.contains(".linux") == false, "duckdb-swift does not compile on Linux; add .linux only with a Linux job that proves it")
+        #expect(declaration.first?.contains(".macOS") == true)
+        #expect(manifest.contains("_mantissa"), "the Linux exclusion must name the upstream failure it stands on")
+        guard let range = Self.range(ofTargetNamed: "BackendKitDuckDB", in: manifest) else {
+            Issue.record("BackendKitDuckDB target block not found in Package.swift")
+            return
+        }
+        let block = String(manifest[range])
+        let driver = Self.lines(of: block, containing: "package: \"duckdb-swift\"")
+        #expect(driver.count == 1)
+        #expect(driver.allSatisfy { $0.contains("condition: .when(platforms: duckDBPlatforms)") })
+        #expect(block.contains(#".define("BACKENDKIT_DUCKDB", .when(platforms: duckDBPlatforms))"#))
+    }
+
+    @Test("the Linux pipeline exists and builds the test targets too")
+    func linuxPipelineIsDeclared() throws {
+        let pipeline = try String(
+            contentsOf: TestPackagePaths.packageRoot().appendingPathComponent(".woodpecker/linux-build.yml"),
+            encoding: .utf8
+        )
+        #expect(pipeline.contains("platform: linux/amd64"))
+        #expect(pipeline.contains("swift build --build-tests"))
+        #expect(pipeline.contains("swift test --skip-build"))
+        #expect(pipeline.contains("manual"))
+    }
+
     // MARK: - Helper
 
     /// Return the range covering `.target(name: "<name>", …)` — from the

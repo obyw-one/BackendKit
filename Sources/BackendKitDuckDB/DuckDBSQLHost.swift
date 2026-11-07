@@ -1,3 +1,4 @@
+#if BACKENDKIT_DUCKDB
 import BackendKitSQL
 import DuckDB
 import Foundation
@@ -89,3 +90,4 @@ struct DuckDBSQLDatabase: SQLDatabase {
         }
     }
 }
+#endif

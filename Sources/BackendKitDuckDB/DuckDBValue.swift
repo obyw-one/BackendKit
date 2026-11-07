@@ -1,3 +1,4 @@
+#if BACKENDKIT_DUCKDB
 import Foundation
 import SQLKit
 
@@ -53,27 +54,49 @@ enum DuckDBBindEncoder {
     }
 
     /// RawRepresentable enums, wrappers and Codable structs: encode as a JSON fragment; a scalar
-    /// fragment binds as that scalar, an object/array binds as its JSON text.
+    /// fragment binds as that scalar, an object/array binds as its (key-sorted) JSON text.
+    ///
+    /// The kind of the fragment is read from the encoder's own compact output, never from a Foundation
+    /// object tree: `JSONSerialization` hands numbers and booleans back as `NSNumber`, and telling a
+    /// JSON `true` from a JSON `1` there needs a CoreFoundation call (`CFBooleanGetTypeID`) that Linux
+    /// does not have. `true`/`false` is a bool token, `1`/`0` is a number token, on every platform.
     private static func viaJSON(_ value: any Encodable) throws -> DuckDBValue {
         let encoder = JSONEncoder()
-        let data = try encoder.encode(DuckDBBox(value))
-        let object = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-        guard let wrapped = (object as? [String: Any])?["v"] else {
-            throw DuckDBSQLError.unsupportedBind("\(type(of: value))")
+        encoder.outputFormatting = [.sortedKeys]
+        let envelope = try encoder.encode(DuckDBBox(value))
+        let opening = Data("{\"v\":".utf8)
+        guard envelope.starts(with: opening), envelope.last == UInt8(ascii: "}") else {
+            throw DuckDBSQLError.unsupportedBind("\(type(of: value)) produced an unexpected JSON envelope")
         }
-        switch wrapped {
-        case is NSNull: return .null
-        case let s as String: return .string(s)
-        case let n as NSNumber:
-            if CFGetTypeID(n) == CFBooleanGetTypeID() { return .bool(n.boolValue) }
-            return Int64(exactly: n).map { .int($0) } ?? .double(n.doubleValue)
-        default:
-            let inner = try JSONSerialization.data(withJSONObject: wrapped, options: [.sortedKeys])
-            guard let text = String(bytes: inner, encoding: .utf8) else {
-                throw DuckDBSQLError.unsupportedBind("\(type(of: value)) produced non-UTF8 JSON")
-            }
-            return .string(text)
+        return try bound(token: Data(envelope.dropFirst(opening.count).dropLast()), of: type(of: value))
+    }
+
+    /// The bound parameter for one JSON value token (the text of the `v` member).
+    static func bound(token: Data, of type: Any.Type) throws -> DuckDBValue {
+        guard let first = token.first else {
+            throw DuckDBSQLError.unsupportedBind("\(type) produced an empty JSON value")
         }
+        switch first {
+        case UInt8(ascii: "n"): return .null
+        case UInt8(ascii: "t"): return .bool(true)
+        case UInt8(ascii: "f"): return .bool(false)
+        case UInt8(ascii: "\""): return .string(try JSONDecoder().decode(String.self, from: token))
+        case UInt8(ascii: "{"), UInt8(ascii: "["): return .string(try text(of: token, type))
+        default: return try number(try text(of: token, type), type)
+        }
+    }
+
+    private static func text(of token: Data, _ type: Any.Type) throws -> String {
+        guard let text = String(bytes: token, encoding: .utf8) else {
+            throw DuckDBSQLError.unsupportedBind("\(type) produced non-UTF8 JSON")
+        }
+        return text
+    }
+
+    private static func number(_ text: String, _ type: Any.Type) throws -> DuckDBValue {
+        if let integer = Int64(text) { return .int(integer) }
+        if let double = Double(text) { return .double(double) }
+        throw DuckDBSQLError.unsupportedBind("\(type) produced an unrecognised JSON number: \(text)")
     }
 }
 
@@ -97,19 +120,40 @@ enum DuckDBValueDecoder {
     static func decode<T: Decodable>(_ type: T.Type, from value: DuckDBValue) throws -> T {
         let decoder = JSONDecoder()
         if let scalar = try scalar(type, from: value) { return scalar }
-        // Cascading representation probe: scalar fragment -> JSON text/blob -> the final `default:` throws
-        // `typeMismatch`. The `try?` only means "this representation did not fit, try the next".
+        // Representation cascade: scalar JSON fragment -> JSON text/blob -> a thrown `typeMismatch`.
+        // A representation that does not fit is not discarded: the fragment probe's own decode error is
+        // kept and goes into the final error, so a value that fits no representation says WHY.
         // Optionals, RawRepresentable enums and wrappers: through a JSON scalar fragment.
-        if let fragment = try fragment(of: value),
-           let decoded = try? decoder.decode(DuckDBFragment<T>.self, from: fragment).v {
-            return decoded
+        let fragmentFailure: String
+        if let fragment = try fragment(of: value) {
+            do {
+                return try decoder.decode(DuckDBFragment<T>.self, from: fragment).v
+            } catch {
+                fragmentFailure = "JSON-fragment probe failed: \(describe(error))"
+            }
+        } else {
+            fragmentFailure = "the cell has no JSON-fragment form"
         }
-        // A struct/array stored as JSON text (or blob).
+        // A struct/array stored as JSON text (or blob): its decode error is itself the cause, and propagates.
         switch value {
         case .string(let s): return try decoder.decode(T.self, from: Data(s.utf8))
         case .blob(let d): return try decoder.decode(T.self, from: d)
-        default: throw DuckDBSQLError.typeMismatch("\(value) as \(T.self)")
+        default: throw DuckDBSQLError.typeMismatch("\(value) as \(T.self): \(fragmentFailure)")
         }
+    }
+
+    /// A decode failure as one line: the library's own reason and where in the value it happened.
+    private static func describe(_ error: any Error) -> String {
+        guard let decoding = error as? DecodingError else { return "\(error)" }
+        let context: DecodingError.Context
+        switch decoding {
+        case .typeMismatch(_, let c), .valueNotFound(_, let c), .keyNotFound(_, let c), .dataCorrupted(let c):
+            context = c
+        @unknown default:
+            return "\(decoding)"
+        }
+        let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+        return "\(context.debugDescription) (at \(path.isEmpty ? "<root>" : path))"
     }
 
     /// The JSON scalar-fragment form of a cell, or nil when the cell has none (applicability, not an error).
@@ -119,7 +163,10 @@ enum DuckDBValueDecoder {
         case .null: json = "null"
         case .bool(let b): json = b ? "true" : "false"
         case .int(let i): json = String(i)
-        case .double(let d): json = d.isFinite ? "\(d)" : "null"
+        case .double(let d):
+            // JSON has no NaN/Infinity: turning them into `null` would silently change the value.
+            guard d.isFinite else { throw DuckDBSQLError.typeMismatch("non-finite double \(d) has no JSON fragment form") }
+            json = "\(d)"
         case .decimal(let d): json = "\(d)"
         case .string(let s):
             let data = try JSONEncoder().encode([s])
@@ -243,3 +290,4 @@ struct DuckDBSQLRow: SQLRow {
         return try DuckDBValueDecoder.decode(D.self, from: values[index])
     }
 }
+#endif

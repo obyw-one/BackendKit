@@ -1,3 +1,4 @@
+#if BACKENDKIT_POSTGRES
 import BackendKitCore
 import PostgresNIO
 
@@ -46,3 +47,4 @@ public extension PostgresClient.Configuration {
         return config
     }
 }
+#endif
