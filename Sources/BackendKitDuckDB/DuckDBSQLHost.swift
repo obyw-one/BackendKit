@@ -1,6 +1,4 @@
-#if BACKENDKIT_DUCKDB
 import BackendKitSQL
-import DuckDB
 import Foundation
 import Logging
 import NIOCore
@@ -13,9 +11,11 @@ import SQLKit
 // The DuckDB engine for `SQLRepository` (spec b4f8c3a1 W3, BR-SQL-08). There is no official
 // SQLKit driver for DuckDB, so this target IS the driver: `DuckDBSQLDatabase` conforms to
 // `SQLDatabase`, lowers SQLKit's expression tree to text + binds, and runs it through
-// duckdb-swift prepared statements on ONE actor (DuckDB is single-writer, in-process).
+// DuckDB prepared statements on ONE actor (DuckDB is single-writer, in-process).
 // Shaped like `SQLiteSQLHost`: `open(storage:) async throws`, `database`, `shutdown()`.
 // DuckDB is confined to this target; BackendKitCore never sees it.
+// The engine behind the actor is one of two drivers behind one facade (`DuckDBDriverProtocol`): duckdb-swift on Apple
+// platforms, the official libduckdb C API on Linux. This file, the value layer and the dialect are the same on both.
 
 public final class DuckDBSQLHost: Sendable {
     /// Where the database lives.
@@ -45,7 +45,7 @@ public final class DuckDBSQLHost: Sendable {
         return DuckDBSQLHost(engine: engine, logger: logger)
     }
 
-    /// Stop accepting statements. The C handles are released when the host is dropped.
+    /// Stop accepting statements and release the database and its file lock. Idempotent.
     public func shutdown() async throws {
         await engine.close()
     }
@@ -90,4 +90,3 @@ struct DuckDBSQLDatabase: SQLDatabase {
         }
     }
 }
-#endif

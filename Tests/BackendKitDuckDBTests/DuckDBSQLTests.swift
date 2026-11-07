@@ -1,4 +1,3 @@
-#if BACKENDKIT_DUCKDB
 import BackendKitDuckDB
 import BackendKitSQL
 import CoreKitTestSupport
@@ -201,4 +200,3 @@ struct DuckDBAnalyticsTests {
         try await host.shutdown()
     }
 }
-#endif
