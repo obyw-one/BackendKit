@@ -26,6 +26,7 @@ private struct FailingClock: DrainClock {
 
 private actor Serves {
     private(set) var count = 0
+    var hasServed: Bool { !isEmpty }
     func served() { count += 1 }
 }
 
@@ -100,7 +101,7 @@ struct ReconnectPolicyTests {
                 clock: ParkedClock(onSleep: { await entered.served() })
             )
         }
-        while await entered.isEmpty { await Task.yield() }
+        while await !entered.hasServed { await Task.yield() }
         task.cancel()
         await task.value
         #expect(await serveCount.count == 1)
