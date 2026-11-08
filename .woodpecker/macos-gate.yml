@@ -1,0 +1,92 @@
+# .woodpecker/macos-gate.yml — BackendKit's macOS quality gate: kagami on every scope, then the Apple simulator builds
+#
+# The Linux pipeline (linux-build.yml) proves every product builds and passes with no Apple framework, DuckDB through
+# the official libduckdb C API. This one proves what Linux cannot: the macOS suites run through kagami with
+# `--strict` (DuckDB through duckdb-swift here), and the package still builds for the iOS Simulator and the tvOS
+# Simulator (the platforms Package.swift declares).
+#
+# The live-Postgres tests (`BACKENDKIT_LIVE_TESTS=1`) SKIP without a server, as everywhere else in this repository,
+# and the scope floors in .kagami/scopes.override.toml are the counts that pass with no server. No database is started
+# here, so what this gate proves for Postgres is the build and the offline suites, not a round trip against a server.
+#
+# WHERE IT RUNS. On the maintainer's own Mac, through a Woodpecker agent on the `local` backend: the steps run
+# DIRECTLY on that machine as the user who owns the agent, with no container around them. That is why the triggers
+# below are narrow:
+#   * never on `pull_request`. A public repository's pull request carries code from outside the team, and that code
+#     must never execute on the Mac;
+#   * `push` and `manual` only, and only on the branches that mean "this is what we ship". `manual` is the
+#     "Exécuter un pipeline" button; the branch is restricted too, so the button cannot run an arbitrary branch here.
+# The first step also refuses to run on any other event, so a loosened `when:` cannot silently widen the trust.
+#
+# BRANCHES. `release/*` and `beta/*` are active. `develop`, `main` and `master` belong here too: reaching them means
+# working on what final customers receive, so the gate must be green there. They are commented out for now only
+# because a single maintainer runs the whole flow by hand today. Uncomment them when more than one person pushes.
+#
+# THE LOCAL BACKEND. `image: bash` below is not a container image: on the local backend it names the interpreter that
+# runs the step's commands. The workspace is cloned by plugin-git, which the agent downloads for the workflow when no
+# global one is installed. The workspace is a per-workflow temporary directory; everything this file builds (SwiftPM
+# `.build`, derived data) goes inside it and goes away with it.
+#
+# STATE LEFT ON THE MAC (accepted: the agent runs one workflow at a time).
+#   * kagami appends its run history to the user's `~/.kagami`;
+#   * SwiftPM keeps its shared package and manifest caches under the user's home, as for any `swift build`.
+# Nothing else is written outside the workspace.
+#
+# FAIL CLOSED. Woodpecker runs each step's commands with `set -e`: the first failing command stops the step, the step
+# fails, and later steps do not run. No `|| true`, no output filter on kagami (its exit code is the verdict: 0 green,
+# 1 red, 2 could not run), nothing skipped after a failed build.
+#
+# Paths are computed at run time (`$$(pwd)`): `${CI_WORKSPACE}` is EMPTY when Woodpecker parses this file, and the
+# `$$` escape keeps Woodpecker from substituting the shell variable. No `environment:` value is built from a path.
+
+when:
+  - event: [push, manual]
+    branch:
+      - "release/*"
+      - "beta/*"
+      # Commented out for now: the maintainer is alone and runs the whole flow by hand. Uncomment when the team grows,
+      # because from then on a green gate on these branches is the surface offered to final customers.
+      # - develop
+      # - main
+      # - master
+
+labels:
+  platform: darwin/arm64
+
+steps:
+  guard:
+    image: bash
+    commands:
+      - |
+        case "$$CI_PIPELINE_EVENT" in
+          push|manual) ;;
+          *) echo "macos-gate: refusing to run on the '$$CI_PIPELINE_EVENT' event; this workflow executes on a developer Mac." >&2; exit 1 ;;
+        esac
+      - test -f Package.swift
+      - xcodebuild -version
+      - kagami --version
+
+  # One kagami invocation per scope declared in .kagami/scopes.override.toml, each with `--strict` (a run that
+  # executed nothing, or fewer tests than the scope's floor, is exit 2, never green).
+  kagami-gate:
+    image: bash
+    commands:
+      - kagami test --scope BackendKitCoreTests --strict
+      - kagami test --scope BackendKitPostgresTests --strict
+      - kagami test --scope BackendKitSQLTests --strict
+      - kagami test --scope BackendKitSQLiteTests --strict
+      - kagami test --scope BackendKitDuckDBTests --strict
+      - kagami test --scope BackendKitResourceTests --strict
+      - kagami test --scope BackendKitMigrationsTests --strict
+
+  # The whole package (every product) for the iOS Simulator. Derived data and the package checkouts live inside the
+  # workspace, so nothing is written to ~/Library/Developer. Simulator builds need no signing.
+  ios-simulator-build:
+    image: bash
+    commands:
+      - xcodebuild build -scheme BackendKit-Package -destination 'generic/platform=iOS Simulator' -derivedDataPath "$$(pwd)/.derived/ios" CODE_SIGNING_ALLOWED=NO
+
+  tvos-simulator-build:
+    image: bash
+    commands:
+      - xcodebuild build -scheme BackendKit-Package -destination 'generic/platform=tvOS Simulator' -derivedDataPath "$$(pwd)/.derived/tvos" CODE_SIGNING_ALLOWED=NO
