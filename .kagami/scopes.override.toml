@@ -57,3 +57,13 @@ module_patterns = ["BackendKitDuckDBTests"]
 expected_test_min = 76
 timeout_seconds = 1800
 description = "BackendKitDuckDB — SQLKit driver behind one facade: duckdb-swift on Apple, the official libduckdb C API on Linux. One behaviour suite runs unchanged on both (every cell type, NULLs, 128-bit decimals, UUID, huge ints, blobs, timestamps, errors, lifecycle, the version pins) plus the SQLKit conformance sub-suites (codable, enum, upsert, union, json-paths; testPlanets replayed minus a DuckDB-rejected GROUP BY), SQLRepository round-trips and the read_json_auto analytics test. Embedded and offline: no live server, no env flag. Floor 76 measured 2026-11-07 on macOS (duckdb-swift 2.1.0-dev84836); 23 before the facade."
+
+[[scopes]]
+name = "BackendKitGateTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitGateTests"
+module_patterns = ["BackendKitGateTests"]
+expected_test_min = 8
+timeout_seconds = 300
+description = "Scope coverage: every test file under Tests/ is run by exactly one declared scope, every suite is selected by it, every test directory is a compiled testTarget. `kagami test --all` runs declared scopes only, so this is what keeps a file nobody declared from going unrun."

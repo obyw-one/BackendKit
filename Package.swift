@@ -127,6 +127,12 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "BackendKitGateTests",
+            dependencies: [
+                .product(name: "CoreKitTestSupport", package: "CoreKit"),
+            ]
+        ),
+        .testTarget(
             name: "BackendKitPostgresTests",
             dependencies: [
                 "BackendKitTestSupport",
