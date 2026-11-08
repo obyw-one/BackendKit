@@ -18,11 +18,17 @@ import PostgresNIO
 // `CoreKit.TaskDeadline.sleep` — never a clock-based `Task.sleep`. The
 // clock-based shape aborts the Swift 6 runtime under cancellation in a
 // task group (backlog `d607d323`, CoreKit 0.9.0's release note).
+//
+// Concurrency: the host holds only immutable, `Sendable` state (`PostgresClient` is `Sendable`, a `Task` is
+// `Sendable`, so is `Logger`), so it is a plain checked-`Sendable` class — no lock, no actor. An actor would
+// serialise nothing: the only mutation is the reconnect loop's attempt counter, a local of the ONE task that runs
+// it. The loop is a method of `ReconnectPolicy` (data + the interpretation of that data), not of the host, on
+// purpose: a loop that captured the host would keep it alive for as long as it runs, and `deinit` — which cancels
+// the loop — could then never fire.
 
-public final class PostgresClientHost: @unchecked Sendable {
+public final class PostgresClientHost: Sendable {
     public let client: PostgresClient
     private let runTask: Task<Void, Never>
-    private let logger: Logger
 
     /// - Parameters:
     ///   - connection: the resolved connection (one value, injected once).
@@ -44,24 +50,9 @@ public final class PostgresClientHost: @unchecked Sendable {
         )
         let client = PostgresClient(configuration: configuration)
         self.client = client
-        self.logger = logger
-        let log = logger
+        let reconnectPolicy = ReconnectPolicy(reconnect: reconnect)
         runTask = Task {
-            var attempt = 0
-            while !Task.isCancelled {
-                await client.run()
-                if Task.isCancelled || !reconnect { return }
-                attempt += 1
-                let backoffSeconds = min(60, 1 << min(attempt, 6))
-                if attempt <= 3 {
-                    log.warning(
-                        "pgClient.run() returned — reconnecting in \(backoffSeconds)s (attempt \(attempt))"
-                    )
-                } else if attempt % 10 == 0 {
-                    log.warning("pgClient still down after \(attempt) retries — backoff \(backoffSeconds)s")
-                }
-                try? await TaskDeadline.sleep(.seconds(backoffSeconds))
-            }
+            await reconnectPolicy.run(logger: logger) { await client.run() }
         }
     }
 
@@ -72,5 +63,104 @@ public final class PostgresClientHost: @unchecked Sendable {
 
     deinit {
         runTask.cancel()
+    }
+}
+
+// MARK: - ReconnectPolicy
+
+/// The reconnect policy of `PostgresClientHost` — the backoff ladder as DATA, and the one loop that interprets it.
+/// Apart from the client so the backoff and the cancellation handling are testable without a server: `serve` is
+/// `PostgresClient.run()`. All time goes through the injected `DrainClock` (CoreKit's fleet time seam): production
+/// uses `TaskDeadlineClock` (sleeps through `TaskDeadline`), tests use `FakeDrainClock`.
+struct ReconnectPolicy: Sendable, Equatable {
+    /// `false` = serve once and return; the caller owns retries.
+    let reconnect: Bool
+    /// The wait before attempt `n` is `backoff[n - 1]`; attempts past the end of the ladder keep its last rung.
+    let backoff: [Duration]
+    /// The first `warnFirst` attempts are logged at warning …
+    let warnFirst: Int
+    /// … then every `warnEvery`-th one.
+    let warnEvery: Int
+    /// A `serve` that stayed up at least this long counts as a successful connection: the attempt counter restarts,
+    /// so a host that was healthy for hours and then drops waits 2 s again, not the 60 s cap.
+    let stableAfter: Duration
+
+    /// Capped exponential backoff: 2, 4, 8, 16, 32, then 60 seconds for ever.
+    static let standardBackoff: [Duration] = [2, 4, 8, 16, 32, 60].map { Duration.seconds($0) }
+
+    init(
+        reconnect: Bool,
+        backoff: [Duration] = ReconnectPolicy.standardBackoff,
+        warnFirst: Int = 3,
+        warnEvery: Int = 10,
+        stableAfter: Duration = .seconds(60)
+    ) {
+        precondition(!backoff.isEmpty, "a reconnect backoff ladder needs at least one rung")
+        self.reconnect = reconnect
+        self.backoff = backoff
+        self.warnFirst = warnFirst
+        self.warnEvery = warnEvery
+        self.stableAfter = stableAfter
+    }
+
+    /// How long to wait after the `attempt`-th return of `serve` (1-based).
+    func delay(afterAttempt attempt: Int) -> Duration {
+        backoff[min(attempt, backoff.count) - 1]
+    }
+
+    func run(
+        logger: Logger,
+        serve: @Sendable () async -> Void,
+        clock: any DrainClock = TaskDeadlineClock()
+    ) async {
+        var attempt = 0
+        while !Task.isCancelled {
+            let startedAt = clock.now()
+            await serve()
+            if Task.isCancelled || !reconnect { return }
+            if clock.now().timeIntervalSince(startedAt) >= stableAfter.seconds { attempt = 0 }
+            attempt += 1
+            let delay = delay(afterAttempt: attempt)
+            let backoffSeconds = delay.components.seconds
+            if attempt <= warnFirst {
+                logger.warning(
+                    "pgClient.run() returned — reconnecting in \(backoffSeconds)s (attempt \(attempt))"
+                )
+            } else if attempt % warnEvery == 0 {
+                logger.warning("pgClient still down after \(attempt) retries — backoff \(backoffSeconds)s")
+            }
+            do {
+                try await clock.sleep(for: delay.seconds)
+            } catch is CancellationError {
+                // `TaskDeadline.sleep` throws only `CancellationError`: the host was closed during the
+                // backoff. That is the loop's stop signal, so leave deliberately instead of re-entering `serve()`.
+                logger.debug("pgClient reconnect loop cancelled during backoff — stopping")
+                return
+            } catch {
+                // Not a documented outcome of the sleep. Looping again would retry with no backoff at all,
+                // so stop the loop and say why rather than hiding it.
+                logger.error("pgClient reconnect backoff sleep failed — reconnect loop stopped", metadata: ["error": "\(error)"])
+                return
+            }
+        }
+    }
+}
+
+// MARK: - TaskDeadlineClock
+
+/// Production `DrainClock` for the reconnect loop: real time, sleeping through `TaskDeadline` (never a clock-based
+/// `Task.sleep`, which aborts the Swift 6 runtime under cancellation in a task group).
+struct TaskDeadlineClock: DrainClock {
+    func now() -> Date { Date() }
+
+    func sleep(for seconds: TimeInterval) async throws {
+        try await TaskDeadline.sleep(TaskDeadline.duration(seconds: seconds))
+    }
+}
+
+private extension Duration {
+    var seconds: TimeInterval {
+        let parts = components
+        return TimeInterval(parts.seconds) + TimeInterval(parts.attoseconds) / 1e18
     }
 }

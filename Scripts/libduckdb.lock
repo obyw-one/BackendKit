@@ -1,0 +1,10 @@
+# The official DuckDB shared library BackendKitDuckDB links on Linux, pinned exactly.
+# Read by Scripts/install-libduckdb.sh and checked by DuckDBVersionPinTests; one KEY=value per line.
+#
+# The sha256 values are those of the release assets `duckdb-shared-libs-linux-<arch>.tar.gz` at
+# https://github.com/duckdb/duckdb/releases/tag/v2.0.0, as GitHub publishes them for the assets
+# (`gh api repos/duckdb/duckdb/releases/tags/v2.0.0`, field `digest`) and as measured by downloading both.
+# To bump: change the version, replace both digests from the new release, update DuckDBVersionPins.linuxLibraryVersion.
+LIBDUCKDB_VERSION=v2.0.0
+LIBDUCKDB_SHA256_AMD64=993ad89e7dfca66cd6da994c2cad090c2fc160ddf9f550498a098ab4bb13cfb1
+LIBDUCKDB_SHA256_ARM64=c60eecf91143ca6bbac55c4f4d40dc22520488b0ac257c86e0fe9a2b451cf2b7

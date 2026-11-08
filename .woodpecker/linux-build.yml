@@ -1,0 +1,70 @@
+# .woodpecker/linux-build.yml — prove BackendKit builds AND passes its tests on Linux (spec b4f8c3a1)
+#
+# The backend half of the fleet runs on Linux, so every product must build with ZERO Apple framework and pass its
+# suite there. All five products are offered on Linux (Package.swift, "Platform split"). Four of them are pure Swift
+# packages. BackendKitDuckDB is built on the official libduckdb through its C API, so this pipeline first installs that
+# library: Scripts/install-libduckdb.sh downloads the release pinned in Scripts/libduckdb.lock for the architecture it
+# runs on (amd64 or arm64), compares its sha256 with the pinned one and FAILS THE JOB on a failed download or a
+# mismatch; nothing is built from an unverified file. Runs on Woodpecker, on the vendor-neutral official swift Linux
+# image — the fleet convention (CoreKit's .woodpecker/linux-build.yml is the model for this file).
+#
+# Steps run in separate containers that share only the workspace, so the library is installed into the workspace
+# (.libduckdb, git-ignored) and every later step points pkg-config (build) and the dynamic loader (run) at it.
+
+when:
+  event: [pull_request, push, manual]  # manual = the "Exécuter un pipeline" button (operator-triggered run)
+  branch: [develop, "epic/*", "feat/*", "fix/*", "agent/*", "story/*"]
+
+# A Linux gate must run on a Linux Docker agent. Without a platform label, any
+# connected agent is eligible, whatever its OS or backend.
+labels:
+  platform: linux/amd64
+
+variables:
+  - &swift_image "swift:6.3-jammy"  # Docker Hub official Linux stable; BackendKit is swift-tools 6.1, within range
+  # Where the pinned libduckdb is installed (inside the workspace, which every step shares): pkg-config finds it at
+  # build time, the dynamic loader at run time.
+
+steps:
+  libduckdb:
+    image: *swift_image
+    # Paths are resolved when the step runs. A `${CI_WORKSPACE}` in an `environment:` block is
+    # substituted when the pipeline is parsed, where it is empty, which put the library under
+    # `/.libduckdb` at the container root and lost it before the build step. `$$` escapes Woodpecker's
+    # own substitution so the shell expands it.
+    commands:
+      - export LIBDUCKDB_PREFIX="$$CI_WORKSPACE/.libduckdb" PKG_CONFIG_PATH="$$CI_WORKSPACE/.libduckdb/lib/pkgconfig" LD_LIBRARY_PATH="$$CI_WORKSPACE/.libduckdb/lib"
+      - uname -m
+      - test -n "$$CI_WORKSPACE" || { echo "CI_WORKSPACE is empty"; exit 1; }
+      - sh Scripts/install-libduckdb.sh
+      - test -f "$$LIBDUCKDB_PREFIX/include/duckdb.h"
+
+  linux-build:
+    image: *swift_image
+    # Paths are resolved when the step runs. A `${CI_WORKSPACE}` in an `environment:` block is
+    # substituted when the pipeline is parsed, where it is empty, which put the library under
+    # `/.libduckdb` at the container root and lost it before the build step. `$$` escapes Woodpecker's
+    # own substitution so the shell expands it.
+    commands:
+      - export LIBDUCKDB_PREFIX="$$CI_WORKSPACE/.libduckdb" PKG_CONFIG_PATH="$$CI_WORKSPACE/.libduckdb/lib/pkgconfig" LD_LIBRARY_PATH="$$CI_WORKSPACE/.libduckdb/lib"
+      - swift --version
+      - swift build --build-tests   # every target AND every test target, so the test code is compiled on Linux too
+
+  # Compiling is not working: the whole suite runs here too (Swift Testing and XCTest), including the DuckDB behaviour
+  # suite that runs unchanged on Apple platforms against duckdb-swift.
+  #
+  # Direct SwiftPM on purpose, the one exception to "kagami only": kagami has no Linux path yet
+  # (macOS-only package, private dependencies; spec 4965545a). Replace this step with kagami once it does.
+  #
+  # The live-Postgres tests (`BACKENDKIT_LIVE_TESTS=1`) SKIP without a server, exactly as on macOS: this pipeline
+  # starts no database, so what it proves for Postgres is the build, the offline binding/host/reconnect tests
+  # and the manifest shape, not a round-trip against a server.
+  linux-test:
+    image: *swift_image
+    # Paths are resolved when the step runs. A `${CI_WORKSPACE}` in an `environment:` block is
+    # substituted when the pipeline is parsed, where it is empty, which put the library under
+    # `/.libduckdb` at the container root and lost it before the build step. `$$` escapes Woodpecker's
+    # own substitution so the shell expands it.
+    commands:
+      - export LIBDUCKDB_PREFIX="$$CI_WORKSPACE/.libduckdb" PKG_CONFIG_PATH="$$CI_WORKSPACE/.libduckdb/lib/pkgconfig" LD_LIBRARY_PATH="$$CI_WORKSPACE/.libduckdb/lib"
+      - swift test --skip-build
