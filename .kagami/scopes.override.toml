@@ -67,3 +67,23 @@ module_patterns = ["BackendKitGateTests"]
 expected_test_min = 8
 timeout_seconds = 300
 description = "Scope coverage: every test file under Tests/ is run by exactly one declared scope, every suite is selected by it, every test directory is a compiled testTarget. `kagami test --all` runs declared scopes only, so this is what keeps a file nobody declared from going unrun."
+
+[[scopes]]
+name = "BackendKitResourceTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitResourceTests"
+module_patterns = ["BackendKitResourceTests"]
+expected_test_min = 26
+timeout_seconds = 1800
+description = "BackendKit resource layer (spec d3f8a1b2 W4/W5): CoreKit's CacheRepositoryConformance, CacheBackingConformance and ConfigEndpointConformance over SQLCacheBacking and SQLConfigEndpoint, on SQLite and DuckDB offline and on Postgres when BACKENDKIT_LIVE_TESTS=1."
+
+[[scopes]]
+name = "BackendKitMigrationsTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitMigrationsTests"
+module_patterns = ["BackendKitMigrationsTests"]
+expected_test_min = 29
+timeout_seconds = 600
+description = "BackendKitMigrations — the Foundation-only schema-migration core moved from shikki-plugin-api v0.15.0 (ledger contract, ledger rules, manifest, MigrationStore protocol): its original cases plus the Foundation-only ratchet. No database, no network."
