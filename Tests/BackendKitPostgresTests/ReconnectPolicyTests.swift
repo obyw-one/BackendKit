@@ -24,9 +24,13 @@ private struct FailingClock: DrainClock {
     func sleep(for seconds: TimeInterval) async throws { throw error }
 }
 
+private actor Flag {
+    private(set) var raised = false
+    func raise() { raised = true }
+}
+
 private actor Serves {
     private(set) var count = 0
-    var hasServed: Bool { !isEmpty }
     func served() { count += 1 }
 }
 
@@ -93,15 +97,15 @@ struct ReconnectPolicyTests {
     func taskCancellationMidWait() async {
         let serveCount = Serves()
         let policy = ReconnectPolicy(reconnect: true)
-        let entered = Serves()
+        let entered = Flag()
         let task = Task {
             await policy.run(
                 logger: LogCapture().logger(),
                 serve: { await serveCount.served() },
-                clock: ParkedClock(onSleep: { await entered.served() })
+                clock: ParkedClock(onSleep: { await entered.raise() })
             )
         }
-        while await !entered.hasServed { await Task.yield() }
+        while await !entered.raised { await Task.yield() }
         task.cancel()
         await task.value
         #expect(await serveCount.count == 1)
