@@ -67,7 +67,9 @@ steps:
       - kagami --version
 
   # One kagami invocation per scope declared in .kagami/scopes.override.toml, each with `--strict` (a run that
-  # executed nothing, or fewer tests than the scope's floor, is exit 2, never green).
+  # executed nothing, or fewer tests than the scope's floor, is exit 2, never green). A branch that declares more
+  # scopes in that file (the resource-layer branch adds BackendKitResourceTests and BackendKitMigrationsTests) adds
+  # one line per scope here when it lands.
   kagami-gate:
     image: bash
     commands:
@@ -76,8 +78,6 @@ steps:
       - kagami test --scope BackendKitSQLTests --strict
       - kagami test --scope BackendKitSQLiteTests --strict
       - kagami test --scope BackendKitDuckDBTests --strict
-      - kagami test --scope BackendKitResourceTests --strict
-      - kagami test --scope BackendKitMigrationsTests --strict
 
   # The whole package (every product) for the iOS Simulator. Derived data and the package checkouts live inside the
   # workspace, so nothing is written to ~/Library/Developer. Simulator builds need no signing.
