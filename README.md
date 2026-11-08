@@ -46,3 +46,7 @@ That is the full contract — one config, one host, one repository. Nothing else
 ## Spec & owner
 
 Spec: `backendkit-connection-seam-and-postgres-product-2026-09-12` (b7e2d4f6). Owner: obyw-one. Depends on CoreKit ≥ 0.9.0 (`TaskDeadline`, `RepositoryProtocol`, `Container`).
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
