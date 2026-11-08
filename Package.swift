@@ -18,13 +18,15 @@ let package = Package(
     platforms: [.macOS(.v14), .iOS(.v17), .tvOS(.v18), .visionOS(.v1)],
     products: [
         .library(name: "BackendKitCore", targets: ["BackendKitCore"]),
+        .library(name: "BackendKitMigrations", targets: ["BackendKitMigrations"]),
         .library(name: "BackendKitPostgres", targets: ["BackendKitPostgres"]),
         .library(name: "BackendKitSQL", targets: ["BackendKitSQL"]),
         .library(name: "BackendKitSQLite", targets: ["BackendKitSQLite"]),
         .library(name: "BackendKitDuckDB", targets: ["BackendKitDuckDB"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/obyw-one/CoreKit.git", from: "0.13.0"),
+        // Pinned by revision until CoreKit tags its epic/d3f8a1b2-resource-layer (cache and config contracts); then `from:`.
+        .package(url: "https://github.com/obyw-one/CoreKit.git", revision: "31925e50820fa846389be226d298d24785c307c9"),
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.30.1"),
         .package(url: "https://github.com/vapor/sql-kit.git", from: "3.36.0"),
         .package(url: "https://github.com/vapor/postgres-kit.git", from: "2.17.0"),
@@ -42,9 +44,15 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),
+        // Foundation only: `dependencies: []` is the guarantee (a test enforces it).
+        .target(
+            name: "BackendKitMigrations",
+            dependencies: []
+        ),
         .target(
             name: "BackendKitSQL",
             dependencies: [
+                "BackendKitMigrations",
                 .product(name: "CoreKit", package: "CoreKit"),
                 .product(name: "SQLKit", package: "sql-kit"),
             ]
@@ -123,6 +131,27 @@ let package = Package(
                 "BackendKitPostgres",
                 .product(name: "SQLKitBenchmark", package: "sql-kit"),
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "CoreKitTestSupport", package: "CoreKit"),
+            ]
+        ),
+        // The resource layer (spec d3f8a1b2 W4/W5): CoreKit's cache and config contracts over SQL, one suite on three engines.
+        .testTarget(
+            name: "BackendKitMigrationsTests",
+            dependencies: [
+                "BackendKitMigrations",
+                .product(name: "CoreKitTestSupport", package: "CoreKit"),
+            ]
+        ),
+        .testTarget(
+            name: "BackendKitResourceTests",
+            dependencies: [
+                "BackendKitTestSupport",
+                "BackendKitMigrations",
+                "BackendKitSQL",
+                "BackendKitSQLite",
+                "BackendKitDuckDB",
+                "BackendKitPostgres",
+                .product(name: "CoreKit", package: "CoreKit"),
                 .product(name: "CoreKitTestSupport", package: "CoreKit"),
             ]
         ),
