@@ -24,9 +24,9 @@ language = "swift"
 package_path = "."
 test_target_name = "BackendKitPostgresTests"
 module_patterns = ["BackendKitPostgresTests"]
-expected_test_min = 10
+expected_test_min = 13
 timeout_seconds = 600
-description = "BackendKitPostgres — the Postgres/NIO driver. Floor is 10, not 11: one test needs a live database and SKIPS without one, so 10 is what passes on a machine with no server (measured 2026-11-07 at the swift-6-concurrency head: 10 passed, 0 failed, 1 skipped; was 8 + 1 skipped, and 2 ReconnectPolicy ladder-as-data tests were added)."
+description = "BackendKitPostgres — the Postgres/NIO driver. Floor is 13, not 14: one test needs a live database and SKIPS without one, so 13 is what passes on a machine with no server (measured 2026-11-08: 13 passed, 0 failed, 1 skipped; the ReconnectPolicy suite runs on a fake clock)."
 
 [[scopes]]
 name = "BackendKitSQLTests"

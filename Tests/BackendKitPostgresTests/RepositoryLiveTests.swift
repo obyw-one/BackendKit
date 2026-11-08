@@ -14,7 +14,7 @@ import Testing
 // live Postgres. Gated by env var so the package's test target is green
 // without a database — CI without Postgres skips it, a developer with
 // shikki-db running exercises it. The process env is snapshotted ONCE through
-// `TypedEnvironment.current()` and handed to the resolver.
+// `LiveDatabase` (an injected `TypedEnvironment`) and handed to the resolver.
 
 @Suite("PostgresRepository — live Codable round-trip (BACKENDKIT_LIVE_TESTS=1)")
 struct RepositoryLiveTests {
@@ -27,23 +27,16 @@ struct RepositoryLiveTests {
 
     // MARK: - Gate
 
-    private static let environment = TypedEnvironment.current()
-
-    static var isLive: Bool {
-        environment.flag(LiveEnvKey.liveTests)
-    }
+    private static let live = LiveDatabase(firstChoicePrefix: "SHIKKI_DB_")
 
     // MARK: - T-04
 
     @Test(
         "save / get / list / delete round-trip against a live Postgres",
-        .enabled(if: isLive)
+        .enabled(if: live.isLive)
     )
     func liveRoundTrip() async throws {
-        let connection = PostgresConnectionConfig(
-            environment: Self.environment,
-            firstChoicePrefix: "SHIKKI_DB_"
-        )
+        let connection = Self.live.connection()
         let host = PostgresClientHost(connection: connection, reconnect: false)
         defer { host.close() }
 

@@ -16,9 +16,9 @@ import Testing
 struct SQLRepositoryLiveTests {
     static let hostile = "x'); DROP TABLE live_notes; --"
 
-    @Test("save / get / list / delete round-trip, hostile string survives as data", .enabled(if: LiveDatabase.isLive))
+    @Test("save / get / list / delete round-trip, hostile string survives as data", .enabled(if: LiveDatabase().isLive))
     func roundTrip() async throws {
-        let host = PostgresSQLHost(connection: LiveDatabase.connection())
+        let host = PostgresSQLHost(connection: LiveDatabase().connection())
         let table = "backendkit_sql_live_\(Int.random(in: 100_000...999_999))"
         try await host.database.raw("CREATE TABLE \(unsafeRaw: table) (id uuid PRIMARY KEY, title text NOT NULL, count bigint NOT NULL)").run()
 

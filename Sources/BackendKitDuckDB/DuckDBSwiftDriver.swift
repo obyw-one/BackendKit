@@ -1,8 +1,8 @@
-#if os(macOS) || os(iOS) || os(tvOS)
+#if os(macOS) || os(iOS) || os(tvOS) || os(visionOS)
 import DuckDB
 import Foundation
 
-// MARK: - DuckDBSwiftDriver (macOS, iOS, tvOS: duckdb-swift)
+// MARK: - DuckDBSwiftDriver (macOS, iOS, tvOS, visionOS: duckdb-swift)
 
 //
 // Apple platforms' side of the facade (`DuckDBDriverProtocol`). It owns a duckdb-swift `Database` and `Connection`;

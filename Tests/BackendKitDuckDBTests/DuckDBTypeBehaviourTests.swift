@@ -6,7 +6,7 @@ import Testing
 // MARK: - DuckDBTypeBehaviourTests
 
 //
-// ONE behaviour suite for BOTH drivers. These tests are compiled unchanged on every platform: on macOS, iOS and tvOS
+// ONE behaviour suite for BOTH drivers. These tests are compiled unchanged on every platform: on macOS, iOS, tvOS and visionOS
 // they run against duckdb-swift (`DuckDBSwiftDriver`), on Linux against the official libduckdb through its C API
 // (`DuckDBCAPIDriver`). They talk to `DuckDBEngine`, the facade's one consumer, and read the cells it hands back, so
 // "the same behaviour" means "the same `DuckDBValue` for the same SQL". A test must never be weakened or branched

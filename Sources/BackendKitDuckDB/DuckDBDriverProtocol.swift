@@ -37,10 +37,10 @@ protocol DuckDBDriverProtocol: AnyObject {
 // module left in a reused build directory makes `canImport(DuckDB)` true on Linux, where it must never be used.
 #if os(Linux)
 typealias DuckDBPlatformDriver = DuckDBCAPIDriver
-#elseif os(macOS) || os(iOS) || os(tvOS)
+#elseif os(macOS) || os(iOS) || os(tvOS) || os(visionOS)
 typealias DuckDBPlatformDriver = DuckDBSwiftDriver
 #else
-#error("BackendKitDuckDB supports macOS, iOS and tvOS (duckdb-swift) and Linux (libduckdb through CDuckDB).")
+#error("BackendKitDuckDB supports macOS, iOS, tvOS and visionOS (duckdb-swift) and Linux (libduckdb through CDuckDB).")
 #endif
 
 // MARK: - DuckDBVersionPins
