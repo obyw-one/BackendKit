@@ -82,6 +82,6 @@ language = "swift"
 package_path = "."
 test_target_name = "BackendKitMigrationsTests"
 module_patterns = ["BackendKitMigrationsTests"]
-expected_test_min = 1
+expected_test_min = 29
 timeout_seconds = 600
 description = "BackendKitMigrations — the Foundation-only schema-migration core moved from shikki-plugin-api v0.15.0 (ledger contract, ledger rules, manifest, MigrationStore protocol): its original cases plus the Foundation-only ratchet. No database, no network."
