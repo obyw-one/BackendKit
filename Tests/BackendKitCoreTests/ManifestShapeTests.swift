@@ -76,7 +76,7 @@ struct ManifestShapeTests {
     @Test("the Postgres drivers are offered on every platform: no platform condition, no compile flag")
     func postgresDriversAreOnEveryPlatform() throws {
         let manifest = try Self.readManifest()
-        // Measured live on macOS, an iOS Simulator, a tvOS Simulator and Linux (2026-11-07); the gate that
+        // Measured live on macOS, an iOS Simulator, a tvOS Simulator and Linux (2026-11-07; visionOS builds); the gate that
         // once kept iOS and tvOS out is gone, and must not creep back without the same kind of evidence.
         #expect(!manifest.contains("serverPlatforms"))
         #expect(!manifest.contains("BACKENDKIT_POSTGRES"))
@@ -119,11 +119,15 @@ struct ManifestShapeTests {
         let apple = Self.lines(of: manifest, containing: "let duckDBSwiftPlatforms")
         #expect(apple.count == 1)
         #expect(apple.first?.contains(".linux") == false, "duckdb-swift does not compile on Linux")
-        #expect(apple.first?.contains(".macOS") == true && apple.first?.contains(".iOS") == true && apple.first?.contains(".tvOS") == true)
+        #expect(apple.first?.contains(".macOS") == true && apple.first?.contains(".iOS") == true && apple.first?.contains(".tvOS") == true && apple.first?.contains(".visionOS") == true, "duckdb-swift is offered on visionOS too")
         let linux = Self.lines(of: manifest, containing: "let libDuckDBPlatforms")
         #expect(linux.count == 1)
         #expect(linux.first?.contains("[.linux]") == true)
-        #expect(manifest.contains("_mantissa"), "the manifest must keep naming the upstream failure that keeps duckdb-swift off Linux")
+        let duckDBDoc = try String(
+            contentsOf: TestPackagePaths.packageRoot().appendingPathComponent("docs/duckdb.md"),
+            encoding: .utf8
+        )
+        #expect(duckDBDoc.contains("_mantissa"), "docs/duckdb.md must keep naming the upstream failure that keeps duckdb-swift off Linux")
 
         guard let range = Self.range(ofTargetNamed: "BackendKitDuckDB", in: manifest) else {
             Issue.record("BackendKitDuckDB target block not found in Package.swift")
@@ -151,6 +155,22 @@ struct ManifestShapeTests {
                 #expect(!binaryExtensions.contains(file.pathExtension), "\(file.lastPathComponent) looks like a committed binary or archive")
             }
         }
+    }
+
+    @Test("the manifest declares every Apple platform BackendKit supports, visionOS included")
+    func platformsDeclared() throws {
+        let manifest = try Self.readManifest()
+        let declared = Self.lines(of: manifest, containing: "platforms: [.macOS")
+        #expect(declared.count == 1)
+        for platform in [".macOS", ".iOS", ".tvOS", ".visionOS"] {
+            #expect(declared.first?.contains(platform) == true, "\(platform) is missing from platforms:")
+        }
+    }
+
+    @Test("Package.swift is a manifest, not documentation: at most a few comment lines")
+    func manifestCarriesNoDocumentation() throws {
+        let comments = try Self.readManifest().split(separator: "\n").filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+        #expect(comments.count <= 12, "documentation lives in docs/*.md; Package.swift has \(comments.count) comment lines")
     }
 
     @Test("the facade: one engine over a driver protocol, two drivers, the platform chosen in exactly one place")

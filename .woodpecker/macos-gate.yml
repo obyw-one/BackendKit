@@ -1,9 +1,9 @@
-# .woodpecker/macos-gate.yml — BackendKit's macOS quality gate: kagami on every scope, then the Apple simulator builds
+# .woodpecker/macos-gate.yml — BackendKit's macOS quality gate: kagami on every scope, then the Apple platform builds
 #
 # The Linux pipeline (linux-build.yml) proves every product builds and passes with no Apple framework, DuckDB through
 # the official libduckdb C API. This one proves what Linux cannot: the macOS suites run through kagami with
-# `--strict` (DuckDB through duckdb-swift here), and the package still builds for the iOS Simulator and the tvOS
-# Simulator (the platforms Package.swift declares).
+# `--strict` (DuckDB through duckdb-swift here), and the package still builds for macOS, the iOS Simulator, the tvOS
+# Simulator and the visionOS Simulator (the platforms Package.swift declares).
 #
 # The live-Postgres tests (`BACKENDKIT_LIVE_TESTS=1`) SKIP without a server, as everywhere else in this repository,
 # and the scope floors in .kagami/scopes.override.toml are the counts that pass with no server. No database is started
@@ -66,21 +66,20 @@ steps:
       - xcodebuild -version
       - kagami --version
 
-  # One kagami invocation per scope declared in .kagami/scopes.override.toml, each with `--strict` (a run that
-  # executed nothing, or fewer tests than the scope's floor, is exit 2, never green). A branch that declares more
-  # scopes in that file (the resource-layer branch adds BackendKitResourceTests and BackendKitMigrationsTests) adds
-  # one line per scope here when it lands.
+  # Every scope declared in .kagami/scopes.override.toml, so a scope added there is gated without editing this file.
+  # `--strict`: a run that executed nothing, or fewer tests than a scope's floor, is exit 2, never green.
   kagami-gate:
     image: bash
     commands:
-      - kagami test --scope BackendKitCoreTests --strict
-      - kagami test --scope BackendKitPostgresTests --strict
-      - kagami test --scope BackendKitSQLTests --strict
-      - kagami test --scope BackendKitSQLiteTests --strict
-      - kagami test --scope BackendKitDuckDBTests --strict
+      - kagami test --all --strict
 
-  # The whole package (every product) for the iOS Simulator. Derived data and the package checkouts live inside the
-  # workspace, so nothing is written to ~/Library/Developer. Simulator builds need no signing.
+  # The whole package (every product) for each Apple platform. Derived data and the package checkouts live inside
+  # the workspace, so nothing is written to ~/Library/Developer. Simulator builds need no signing.
+  macos-build:
+    image: bash
+    commands:
+      - xcodebuild build -scheme BackendKit-Package -destination 'platform=macOS' -derivedDataPath "$$(pwd)/.derived/macos"
+
   ios-simulator-build:
     image: bash
     commands:
@@ -90,3 +89,8 @@ steps:
     image: bash
     commands:
       - xcodebuild build -scheme BackendKit-Package -destination 'generic/platform=tvOS Simulator' -derivedDataPath "$$(pwd)/.derived/tvos" CODE_SIGNING_ALLOWED=NO
+
+  visionos-simulator-build:
+    image: bash
+    commands:
+      - xcodebuild build -scheme BackendKit-Package -destination 'generic/platform=visionOS Simulator' -derivedDataPath "$$(pwd)/.derived/visionos" CODE_SIGNING_ALLOWED=NO

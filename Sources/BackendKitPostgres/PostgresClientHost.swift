@@ -70,7 +70,8 @@ public final class PostgresClientHost: Sendable {
 
 /// The reconnect policy of `PostgresClientHost` — the backoff ladder as DATA, and the one loop that interprets it.
 /// Apart from the client so the backoff and the cancellation handling are testable without a server: `serve` is
-/// `PostgresClient.run()`, `sleep` is `TaskDeadline.sleep`.
+/// `PostgresClient.run()`. All time goes through the injected `DrainClock` (CoreKit's fleet time seam): production
+/// uses `TaskDeadlineClock` (sleeps through `TaskDeadline`), tests use `FakeDrainClock`.
 struct ReconnectPolicy: Sendable, Equatable {
     /// `false` = serve once and return; the caller owns retries.
     let reconnect: Bool
@@ -80,6 +81,9 @@ struct ReconnectPolicy: Sendable, Equatable {
     let warnFirst: Int
     /// … then every `warnEvery`-th one.
     let warnEvery: Int
+    /// A `serve` that stayed up at least this long counts as a successful connection: the attempt counter restarts,
+    /// so a host that was healthy for hours and then drops waits 2 s again, not the 60 s cap.
+    let stableAfter: Duration
 
     /// Capped exponential backoff: 2, 4, 8, 16, 32, then 60 seconds for ever.
     static let standardBackoff: [Duration] = [2, 4, 8, 16, 32, 60].map { Duration.seconds($0) }
@@ -88,13 +92,15 @@ struct ReconnectPolicy: Sendable, Equatable {
         reconnect: Bool,
         backoff: [Duration] = ReconnectPolicy.standardBackoff,
         warnFirst: Int = 3,
-        warnEvery: Int = 10
+        warnEvery: Int = 10,
+        stableAfter: Duration = .seconds(60)
     ) {
         precondition(!backoff.isEmpty, "a reconnect backoff ladder needs at least one rung")
         self.reconnect = reconnect
         self.backoff = backoff
         self.warnFirst = warnFirst
         self.warnEvery = warnEvery
+        self.stableAfter = stableAfter
     }
 
     /// How long to wait after the `attempt`-th return of `serve` (1-based).
@@ -105,12 +111,14 @@ struct ReconnectPolicy: Sendable, Equatable {
     func run(
         logger: Logger,
         serve: @Sendable () async -> Void,
-        sleep: @Sendable (Duration) async throws -> Void = { try await TaskDeadline.sleep($0) }
+        clock: any DrainClock = TaskDeadlineClock()
     ) async {
         var attempt = 0
         while !Task.isCancelled {
+            let startedAt = clock.now()
             await serve()
             if Task.isCancelled || !reconnect { return }
+            if clock.now().timeIntervalSince(startedAt) >= stableAfter.seconds { attempt = 0 }
             attempt += 1
             let delay = delay(afterAttempt: attempt)
             let backoffSeconds = delay.components.seconds
@@ -122,7 +130,7 @@ struct ReconnectPolicy: Sendable, Equatable {
                 logger.warning("pgClient still down after \(attempt) retries — backoff \(backoffSeconds)s")
             }
             do {
-                try await sleep(delay)
+                try await clock.sleep(for: delay.seconds)
             } catch is CancellationError {
                 // `TaskDeadline.sleep` throws only `CancellationError`: the host was closed during the
                 // backoff. That is the loop's stop signal, so leave deliberately instead of re-entering `serve()`.
@@ -135,5 +143,24 @@ struct ReconnectPolicy: Sendable, Equatable {
                 return
             }
         }
+    }
+}
+
+// MARK: - TaskDeadlineClock
+
+/// Production `DrainClock` for the reconnect loop: real time, sleeping through `TaskDeadline` (never a clock-based
+/// `Task.sleep`, which aborts the Swift 6 runtime under cancellation in a task group).
+struct TaskDeadlineClock: DrainClock {
+    func now() -> Date { Date() }
+
+    func sleep(for seconds: TimeInterval) async throws {
+        try await TaskDeadline.sleep(TaskDeadline.duration(seconds: seconds))
+    }
+}
+
+private extension Duration {
+    var seconds: TimeInterval {
+        let parts = components
+        return TimeInterval(parts.seconds) + TimeInterval(parts.attoseconds) / 1e18
     }
 }
