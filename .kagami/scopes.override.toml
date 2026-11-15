@@ -14,7 +14,7 @@ language = "swift"
 package_path = "."
 test_target_name = "BackendKitCoreTests"
 module_patterns = ["BackendKitCoreTests"]
-expected_test_min = 20
+expected_test_min = 31
 timeout_seconds = 600
 description = "BackendKitCore — the driver-free core: types, errors and the connection contract."
 
@@ -24,6 +24,46 @@ language = "swift"
 package_path = "."
 test_target_name = "BackendKitPostgresTests"
 module_patterns = ["BackendKitPostgresTests"]
-expected_test_min = 4
+expected_test_min = 13
 timeout_seconds = 600
-description = "BackendKitPostgres — the Postgres/NIO driver. Floor is 4, not 5: one test needs a live database and SKIPS without one, so 4 is what passes on a machine with no server (measured 2026-10-29: 4 passed, 0 failed, 1 skipped)."
+description = "BackendKitPostgres — the Postgres/NIO driver. Floor is 13, not 14: one test needs a live database and SKIPS without one, so 13 is what passes on a machine with no server (measured 2026-11-08: 13 passed, 0 failed, 1 skipped; the ReconnectPolicy suite runs on a fake clock)."
+
+[[scopes]]
+name = "BackendKitSQLTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitSQLTests"
+module_patterns = ["BackendKitSQLTests"]
+expected_test_min = 2
+timeout_seconds = 600
+description = "BackendKitSQL — SQLRepository binding evidence (offline, 2 tests) plus the live Postgres round-trip and SQLKitBenchmark conformance, which SKIP without BACKENDKIT_LIVE_TESTS=1 (floor 2 is the offline count)."
+
+[[scopes]]
+name = "BackendKitSQLiteTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitSQLiteTests"
+module_patterns = ["BackendKitSQLiteTests"]
+expected_test_min = 17
+timeout_seconds = 600
+description = "BackendKitSQLite — SQLKit conformance benchmark + SQLRepository round-trips (memory, file) with a hostile-string bind. Offline: no live server, no env flag."
+
+[[scopes]]
+name = "BackendKitDuckDBTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitDuckDBTests"
+module_patterns = ["BackendKitDuckDBTests"]
+expected_test_min = 76
+timeout_seconds = 1800
+description = "BackendKitDuckDB — SQLKit driver behind one facade: duckdb-swift on Apple, the official libduckdb C API on Linux. One behaviour suite runs unchanged on both (every cell type, NULLs, 128-bit decimals, UUID, huge ints, blobs, timestamps, errors, lifecycle, the version pins) plus the SQLKit conformance sub-suites (codable, enum, upsert, union, json-paths; testPlanets replayed minus a DuckDB-rejected GROUP BY), SQLRepository round-trips and the read_json_auto analytics test. Embedded and offline: no live server, no env flag. Floor 76 measured 2026-11-07 on macOS (duckdb-swift 2.1.0-dev84836); 23 before the facade."
+
+[[scopes]]
+name = "BackendKitGateTests"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitGateTests"
+module_patterns = ["BackendKitGateTests"]
+expected_test_min = 8
+timeout_seconds = 300
+description = "Scope coverage: every test file under Tests/ is run by exactly one declared scope, every suite is selected by it, every test directory is a compiled testTarget. `kagami test --all` runs declared scopes only, so this is what keeps a file nobody declared from going unrun."

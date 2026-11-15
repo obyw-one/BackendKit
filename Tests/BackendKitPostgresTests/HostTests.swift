@@ -10,8 +10,9 @@ import Testing
 //
 // T-02 (spec b7e2d4f6, phase 4): `Configuration.make` carries the fixture
 // verbatim and no environment key is read. The reconnect path (T-03) is
-// enforced by a source scan on `Sources/BackendKitPostgres` — the host must
-// use `TaskDeadline.sleep`, never `Task.sleep(for:)`.
+// enforced by CoreKit's `TaskDeadlineRatchet` over `Sources/BackendKitPostgres` —
+// the host must use `TaskDeadline.sleep`, never the clock-based sleep. The whole
+// package is held by `FleetRatchetsTests` in BackendKitCoreTests.
 
 @Suite("PostgresClientHost — Configuration.make carries the fixture verbatim")
 struct HostTests {
@@ -70,45 +71,12 @@ struct HostTests {
 
     // MARK: - T-03: no clock-based sleep in the host
 
-    @Test("PostgresClientHost sleeps through TaskDeadline, never Task.sleep(for:)")
-    func hostUsesTaskDeadlineSleep() throws {
-        let root = Self.postgresSourcesRoot()
-        guard FileManager.default.fileExists(atPath: root.path) else {
-            Issue.record("Sources/BackendKitPostgres not found at \(root.path)")
-            return
-        }
-        let banned = try findBannedSleepShape(in: root)
+    @Test("PostgresClientHost sleeps through TaskDeadline, never the clock-based sleep")
+    func hostUsesTaskDeadlineSleep() {
+        let root = TestPackagePaths.sourcesRoot(ofModule: "BackendKitPostgres")
+        #expect(FileManager.default.fileExists(atPath: root.path), "Sources/BackendKitPostgres not found at \(root.path)")
+        // CoreKit's shared ratchet (BR-CKT-02) — the same scanner every kit stands on, not a local copy.
+        let banned = TaskDeadlineRatchet.clockBasedSleeps(in: root)
         #expect(banned.isEmpty, "clock-based sleep in BackendKitPostgres: \(banned)")
-    }
-
-    // MARK: - Helpers
-
-    /// CoreKit's `TestPackagePaths` is the fleet SSoT for "where is my
-    /// package" (BackendKit #2 review) — no hand-counted `#filePath` walk.
-    private static func postgresSourcesRoot() -> URL {
-        TestPackagePaths.sourcesRoot(ofModule: "BackendKitPostgres")
-    }
-
-    private func findBannedSleepShape(in root: URL) throws -> [String] {
-        guard let enumerator = FileManager.default.enumerator(atPath: root.path) else {
-            return []
-        }
-        // Ban `Task.sleep(for:` — the clock-based shape that aborts the
-        // Swift 6 runtime under cancellation (CoreKit 0.9.0 release note).
-        let pattern = try NSRegularExpression(pattern: #"Task\.sleep\(for:"#)
-        var hits: [String] = []
-        for case let rel as String in enumerator where rel.hasSuffix(".swift") {
-            let url = root.appendingPathComponent(rel)
-            let content = try String(contentsOf: url, encoding: .utf8)
-            for (index, line) in content.components(separatedBy: "\n").enumerated() {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("//") { continue }
-                let range = NSRange(line.startIndex..., in: line)
-                if pattern.firstMatch(in: line, range: range) != nil {
-                    hits.append("Sources/BackendKitPostgres/\(rel):\(index + 1)")
-                }
-            }
-        }
-        return hits
     }
 }
