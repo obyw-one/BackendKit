@@ -13,8 +13,17 @@ let package = Package(
         .library(name: "BackendKitPostgres", targets: ["BackendKitPostgres"]),
     ],
     dependencies: [
-        // 0.9.1: TypedEnvironment (the one env reader) + CoreKitTestSupport.TestScratch / TestPackagePaths
-        .package(url: "https://github.com/FJ-Studios/CoreKit.git", from: "0.9.1"),
+        // CoreKit 0.17.0, from obyw-one — NOT FJ-Studios/CoreKit 0.9.1, which this
+        // package pinned until 2026-11-15: the OLD org and eight minors back.
+        // 0.9.1 gave TypedEnvironment and CoreKitTestSupport; 0.17.0 adds the
+        // resource layer (0.14.0), CoreKitSecurity (0.15.0) and EventBusProviding
+        // (0.17.0), and — the reason this bump belongs to spec c8fa126c — it is
+        // the first CoreKit that cross-builds for Linux. Re-measured 2026-11-15
+        // with the Static Linux SDK: `CoreKit` exits 0 for both
+        // aarch64-swift-linux-musl and x86_64-swift-linux-musl, because the
+        // SwiftUI/Combine/Network surface moved to the Apple-only CoreKitUI
+        // product and the one `import os` is guarded.
+        .package(url: "https://github.com/obyw-one/CoreKit.git", from: "0.17.0"),
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.22.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0"),
     ],
