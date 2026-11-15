@@ -1,13 +1,13 @@
 {
-  "originHash" : "51cfad6778e04f9c59a8308b96c3d6b8634c2427597489982d33f5f2e90ce3a8",
+  "originHash" : "e0b8b92dbc68509c25fae94767baebaaef6f691a381d6d7228154da92f1d0027",
   "pins" : [
     {
       "identity" : "corekit",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/FJ-Studios/CoreKit.git",
+      "location" : "https://github.com/obyw-one/CoreKit.git",
       "state" : {
-        "revision" : "d3adf9e3bafa6aa4b948bb7454a96aa88670273d",
-        "version" : "0.9.1"
+        "revision" : "1a915c76ede43d88f31caf116e6a2ea6fdc56f98",
+        "version" : "0.17.0"
       }
     },
     {
@@ -60,8 +60,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-crypto.git",
       "state" : {
-        "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
-        "version" : "3.15.1"
+        "revision" : "da9d28d69ebe3894b18376c8f2395c2f37b8448f",
+        "version" : "4.5.2"
       }
     },
     {

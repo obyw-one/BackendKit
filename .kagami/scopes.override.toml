@@ -27,3 +27,21 @@ module_patterns = ["BackendKitPostgresTests"]
 expected_test_min = 4
 timeout_seconds = 600
 description = "BackendKitPostgres — the Postgres/NIO driver. Floor is 4, not 5: one test needs a live database and SKIPS without one, so 4 is what passes on a machine with no server (measured 2026-10-29: 4 passed, 0 failed, 1 skipped)."
+
+[[scopes]]
+# Spec c8fa126c W5 (f1a7c3e8 T-03). BackendKit was ALREADY clean — zero Apple
+# imports, zero `#if`, both musl triples exit 0 — and that is exactly the state
+# that regresses silently: a backend runs on Linux, and the first `import os`
+# added here would be caught by nothing until a deploy. The manifest claim is
+# pinned as text too, because the defect this wave fixed was a stale pin
+# (FJ-Studios/CoreKit 0.9.1) plus a header comment asserting CoreKit was not
+# Linux-clean, which stopped being true at 0.14.0.
+name = "BackendKitPortability"
+language = "swift"
+package_path = "."
+test_target_name = "BackendKitCoreTests"
+type_patterns = ["BackendKitPortabilityRatchetTests"]
+test_file_patterns = ["**/BackendKitCoreTests/Portability/*.swift"]
+expected_test_min = 3
+timeout_seconds = 300
+description = "No Apple-only import and no compilation condition in BackendKit; the CoreKit pin is obyw-one's at the Linux-clean floor. Run: kagami test --scope BackendKitPortability"
