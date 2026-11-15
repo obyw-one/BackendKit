@@ -34,7 +34,7 @@ public enum SQLRepositoryError: Error, Sendable, CustomStringConvertible {
 // consumed ONLY through SQLKit's own async builder methods here: nothing
 // public on this type exposes an EventLoopFuture (BR-SQL-07).
 //
-// Migration is the consumer's job (BackendKit's `MigrationRunner`, BR-SQL-05).
+// Migration is the consumer's job: `SQLMigrationStore` (this target) applies a migrations folder through the ledger (BR-SQL-05).
 
 public actor SQLRepository<ID: Codable & Hashable & Sendable, Model: Codable & Sendable>: RepositoryProtocol {
     public typealias ModelType = Model

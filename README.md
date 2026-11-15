@@ -7,9 +7,31 @@ The engine-agnostic database connection seam of the fleet, one product per engin
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
 | `BackendKitCore`     | `DBConnectionConfiguring`, `PostgresConnectionConfig(environment:firstChoicePrefix:)`, `ConnectionPolicy`, `ConnectionInjectionRatchet` | none         |
 | `BackendKitPostgres` | `PostgresClientHost`, `PostgresClient.Configuration.make(connection:policy:)`, `PostgresRepository<ID, Model>`, `PostgresSQLHost`       | postgres-nio |
-| `BackendKitSQL`      | `SQLRepository<ID, Model>` — one typed, parameter-binding repository over any SQLKit `SQLDatabase` (engine-neutral)                      | SQLKit       |
+| `BackendKitSQL`      | `SQLRepository<ID, Model>` — one typed, parameter-binding repository over any SQLKit `SQLDatabase` (engine-neutral); `SQLCacheBacking` (CoreKit `CacheBacking` over a table); `SQLConfigEndpoint` (CoreKit `ConfigEndpoint` over a table); `SQLMigrationStore` (applies a migrations folder through a ledger) | SQLKit       |
+| `BackendKitMigrations` | The schema-migration core: `MigrationLedgerContract`, `MigrationLedger` (the file rules), `MigrationManifest`, `MigrationVersion`, the `MigrationStore` protocol. Foundation only, no dependency: link it without NIO, Postgres, SQLite or DuckDB in your build. | none         |
 | `BackendKitSQLite`   | `SQLiteSQLHost` — file / in-memory SQLite engine for `SQLRepository`                                                                    | sqlite-kit   |
 | `BackendKitDuckDB`   | `DuckDBSQLHost` — embedded, single-writer DuckDB engine for `SQLRepository`                                                             | duckdb-swift (Apple), libduckdb C API (Linux) |
+
+## Resource layer: cache, config and migrations over SQL
+
+`SQLCacheBacking` and `SQLConfigEndpoint` are the database backings of CoreKit's cache and config contracts
+(`CacheBacking`, `ConfigEndpoint`), and `SQLMigrationStore` is the SQL adapter of `BackendKitMigrations`' `MigrationStore`.
+They work through the same SQLKit code on SQLite, DuckDB and Postgres, and each runs CoreKit's conformance suites
+(`CacheRepositoryConformance`, `CacheBackingConformance`, `ConfigEndpointConformance`) from `BackendKitResourceTests`.
+
+Tables are created explicitly by the consumer, from a schema this kit declares: `SQLCacheBackingSchema`,
+`SQLConfigSchema` and `SQLMigrationLedger` each offer `configure(_:)` (pass it to `SQLiteSQLHost.createStrictTable`, which
+makes the table `STRICT`) and `create(on:...)` (`CREATE TABLE IF NOT EXISTS`, for DuckDB and Postgres).
+
+```swift
+let host = try await SQLiteSQLHost.open(storage: .memory)
+try await host.createStrictTable("cache", SQLCacheBackingSchema.configure)
+let backing = SQLCacheBacking(database: host.database, table: "cache", bucket: "evidence", node: "mac-a")
+let cache = AsyncCacheRepository<Report>("reports", backing: backing)   // CoreKit
+```
+
+The live Postgres run of the resource tests needs `BACKENDKIT_LIVE_TESTS=1` and the libpq variables (`PGHOST`, `PGPORT`,
+`PGUSER`, `PGDATABASE`, `PGPASSWORD`) pointing at a scratch database; without them it runs SQLite and DuckDB only.
 
 ## Platforms
 
